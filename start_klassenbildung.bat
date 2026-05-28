@@ -10,8 +10,7 @@ call ".venv\Scripts\activate.bat"
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 
-start "" "http://localhost:8501"
-streamlit run app.py --server.address localhost --server.port 8501
+start "" "http://localhost:6767"
+streamlit run app.py --server.address localhost --server.port 6767
 
 pause
-

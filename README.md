@@ -23,13 +23,13 @@ Linux/macOS für Entwicklung:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-streamlit run app.py --server.address localhost --server.port 8501
+streamlit run app.py --server.address localhost --server.port 6767
 ```
 
 Danach im Browser öffnen:
 
 ```text
-http://localhost:8501
+http://localhost:6767
 ```
 
 ## Aktueller Stand
@@ -78,4 +78,3 @@ python -m pytest
 
 Die Tests erzeugen kleine künstliche Excel-Dateien im Speicher. Echte
 Schülerdaten werden nicht benötigt.
-

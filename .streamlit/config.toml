@@ -4,5 +4,4 @@ gatherUsageStats = false
 [server]
 headless = true
 address = "localhost"
-port = 8501
-
+port = 6767
