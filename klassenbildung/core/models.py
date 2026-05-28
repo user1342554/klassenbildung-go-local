@@ -81,6 +81,8 @@ class OptimizationSettings:
     enforce_music_profile: bool = True
     enforce_language_profile: bool = True
 
+    weight_music_profile: int = 800
+    weight_language_profile: int = 800
     weight_friend1: int = 1000
     weight_friend2: int = 300
     weight_support_distribution: int = 250
@@ -164,4 +166,3 @@ class SolverResult:
     score_report: ScoreReport | None = None
     objective_value: int | None = None
     message: str | None = None
-

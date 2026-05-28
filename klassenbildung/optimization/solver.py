@@ -56,6 +56,26 @@ def solve_assignments(
     objective_terms = []
     _add_friend_terms(model, x, students, class_configs, lambda student: student.friend1, settings.weight_friend1, objective_terms)
     _add_friend_terms(model, x, students, class_configs, lambda student: student.friend2, settings.weight_friend2, objective_terms)
+    _add_soft_profile_terms(
+        x,
+        students,
+        class_configs,
+        enforce_hard=settings.enforce_music_profile,
+        weight=settings.weight_music_profile,
+        student_getter=lambda student: student.music_profile,
+        allowed_getter=lambda config: config.music_allowed,
+        objective_terms=objective_terms,
+    )
+    _add_soft_profile_terms(
+        x,
+        students,
+        class_configs,
+        enforce_hard=settings.enforce_language_profile,
+        weight=settings.weight_language_profile,
+        student_getter=lambda student: student.second_language,
+        allowed_getter=lambda config: config.languages_allowed,
+        objective_terms=objective_terms,
+    )
     _add_distribution_terms(
         model,
         x,
@@ -175,6 +195,26 @@ def _add_friend_terms(
         objective_terms.append(weight * (1 - same))
 
 
+def _add_soft_profile_terms(
+    x,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    enforce_hard: bool,
+    weight: int,
+    student_getter: Callable[[Student], str | None],
+    allowed_getter: Callable[[ClassConfig], list[str]],
+    objective_terms: list,
+) -> None:
+    if enforce_hard or weight <= 0:
+        return
+    for i, student in enumerate(students):
+        student_value = student_getter(student)
+        for c, config in enumerate(class_configs):
+            allowed = allowed_getter(config)
+            if allowed and student_value not in allowed:
+                objective_terms.append(weight * x[(i, c)])
+
+
 def _add_distribution_terms(
     model,
     x,
@@ -291,4 +331,3 @@ def _solve_greedy_fallback(
         score_report=score,
         message="OR-Tools ist nicht installiert. Es wurde ein einfacher Fallback verwendet.",
     )
-

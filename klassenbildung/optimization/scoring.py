@@ -101,6 +101,22 @@ def score_solution(
     warnings.extend(unresolved2)
 
     total_score = friend1_penalty + friend2_penalty
+    if not settings.enforce_music_profile:
+        total_score += settings.weight_music_profile * _soft_profile_mismatches(
+            students,
+            assignments,
+            class_by_id,
+            lambda student: student.music_profile,
+            lambda config: config.music_allowed,
+        )
+    if not settings.enforce_language_profile:
+        total_score += settings.weight_language_profile * _soft_profile_mismatches(
+            students,
+            assignments,
+            class_by_id,
+            lambda student: student.second_language,
+            lambda config: config.languages_allowed,
+        )
     total_score += settings.weight_support_distribution * _scaled_distribution_deviation(
         class_reports,
         lambda report: report.support_count,
@@ -185,6 +201,24 @@ def _score_friend_requests(
     return total, fulfilled, (total - fulfilled) * weight, unmet, unresolved
 
 
+def _soft_profile_mismatches(
+    students: list[Student],
+    assignments: dict[str, str],
+    class_by_id: dict[str, ClassConfig],
+    student_getter: Callable[[Student], str | None],
+    allowed_getter: Callable[[ClassConfig], list[str]],
+) -> int:
+    mismatches = 0
+    for student in students:
+        config = class_by_id.get(assignments.get(student.internal_id) or "")
+        if not config:
+            continue
+        allowed = allowed_getter(config)
+        if allowed and student_getter(student) not in allowed:
+            mismatches += 1
+    return mismatches
+
+
 def _scaled_distribution_deviation(
     class_reports: list[ClassReport],
     getter: Callable[[ClassReport], int],
@@ -248,4 +282,3 @@ def _score_manual_rule(
             hard_violations.append(
                 f"{student_a.display_label} und {student_b.display_label}: Trennungsregel verletzt"
             )
-

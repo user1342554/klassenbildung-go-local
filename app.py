@@ -37,10 +37,10 @@ def main() -> None:
         [
             "1 Upload",
             "2 Datenprüfung",
-            "3 Bemerkungen",
-            "4 Klassen",
-            "5 Optimierung",
-            "6 Ergebnis",
+            "3 Klassen",
+            "4 Optimierung",
+            "5 Ergebnis",
+            "6 Bemerkungen",
         ]
     )
 
@@ -49,13 +49,13 @@ def main() -> None:
     with tabs[1]:
         _validation_tab(settings)
     with tabs[2]:
-        _comments_tab()
-    with tabs[3]:
         _class_config_tab()
-    with tabs[4]:
+    with tabs[3]:
         _optimization_tab(settings)
-    with tabs[5]:
+    with tabs[4]:
         _result_tab(settings)
+    with tabs[5]:
+        _comments_tab()
 
 
 def _init_state() -> None:
@@ -73,7 +73,28 @@ def _settings_panel() -> OptimizationSettings:
         enforce_music = st.checkbox("Musikprofil hart", value=current.enforce_music_profile)
         enforce_language = st.checkbox("Fremdsprache hart", value=current.enforce_language_profile)
         st.header("Gewichtungen")
+        soft_profile_weights = {
+            "weight_music_profile": current.weight_music_profile,
+            "weight_language_profile": current.weight_language_profile,
+        }
+        if not enforce_music:
+            soft_profile_weights["weight_music_profile"] = st.slider(
+                "Musikprofil-Abweichung",
+                0,
+                3000,
+                current.weight_music_profile,
+                step=50,
+            )
+        if not enforce_language:
+            soft_profile_weights["weight_language_profile"] = st.slider(
+                "Fremdsprachen-Abweichung",
+                0,
+                3000,
+                current.weight_language_profile,
+                step=50,
+            )
         weights = {
+            **soft_profile_weights,
             "weight_friend1": st.slider("Freund 1", 0, 3000, current.weight_friend1, step=50),
             "weight_friend2": st.slider("Freund 2", 0, 1500, current.weight_friend2, step=50),
             "weight_support_distribution": st.slider("R-Verteilung", 0, 1000, current.weight_support_distribution, step=25),
@@ -300,4 +321,3 @@ def _result_tab(settings: OptimizationSettings) -> None:
 
 if __name__ == "__main__":
     main()
-
