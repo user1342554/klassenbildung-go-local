@@ -4,7 +4,7 @@ import json
 import math
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from klassenbildung.core.constants import DEFAULT_WEIGHTS
 from klassenbildung.core.models import ClassConfig, OptimizationSettings
@@ -25,6 +25,10 @@ def _read_json(path: Path) -> dict[str, Any]:
 def load_settings() -> OptimizationSettings:
     path = USER_SETTINGS_PATH if USER_SETTINGS_PATH.exists() else DEFAULT_SETTINGS_PATH
     data = _read_json(path) if path.exists() else {}
+    return settings_from_mapping(data)
+
+
+def settings_from_mapping(data: Mapping[str, Any]) -> OptimizationSettings:
     payload = {
         "enforce_music_profile": bool(data.get("enforce_music_profile", True)),
         "enforce_language_profile": bool(data.get("enforce_language_profile", True)),
@@ -32,6 +36,20 @@ def load_settings() -> OptimizationSettings:
     }
     for key, default in DEFAULT_WEIGHTS.items():
         payload[key] = int(data.get(key, default))
+    return OptimizationSettings(**payload)
+
+
+def coerce_settings(value: object | None) -> OptimizationSettings:
+    if value is None:
+        return load_settings()
+    if isinstance(value, Mapping):
+        return settings_from_mapping(value)
+
+    base = load_settings()
+    payload = {
+        field_name: getattr(value, field_name, getattr(base, field_name))
+        for field_name in OptimizationSettings.__dataclass_fields__
+    }
     return OptimizationSettings(**payload)
 
 
@@ -124,4 +142,3 @@ def generate_class_configs(
             for config in configs
         ]
     return configs
-

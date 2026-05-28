@@ -5,6 +5,7 @@ import streamlit as st
 
 from klassenbildung.core.models import ClassConfig, OptimizationSettings
 from klassenbildung.core.settings import (
+    coerce_settings,
     generate_class_configs,
     load_class_configs,
     load_settings,
@@ -60,6 +61,7 @@ def main() -> None:
 
 def _init_state() -> None:
     st.session_state.setdefault("settings", load_settings())
+    st.session_state.settings = coerce_settings(st.session_state.settings)
     st.session_state.setdefault("class_configs", load_class_configs())
     st.session_state.setdefault("import_result", None)
     st.session_state.setdefault("validation_result", None)
@@ -67,7 +69,8 @@ def _init_state() -> None:
 
 
 def _settings_panel() -> OptimizationSettings:
-    current: OptimizationSettings = st.session_state.settings
+    current: OptimizationSettings = coerce_settings(st.session_state.settings)
+    st.session_state.settings = current
     with st.sidebar:
         st.header("Regeln")
         enforce_music = st.checkbox("Musikprofil hart", value=current.enforce_music_profile)
