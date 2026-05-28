@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from itertools import combinations
 
 from klassenbildung.core.constants import (
     ALLOWED_ELIGIBILITY,
@@ -43,6 +44,7 @@ def validate_students(
         messages.append(ValidationMessage("FEHLER", "Keine Klassen konfiguriert."))
     else:
         messages.extend(_validate_hard_profile_feasibility(students, class_configs, settings))
+        messages.extend(_validate_profile_capacity_feasibility(students, class_configs, settings))
         min_total = sum(config.size_min for config in class_configs)
         max_total = sum(config.size_max for config in class_configs)
         if len(students) < min_total:
@@ -189,6 +191,78 @@ def _validate_hard_profile_feasibility(
     return messages
 
 
+def _validate_profile_capacity_feasibility(
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+) -> list[ValidationMessage]:
+    if not settings.enforce_music_profile and not settings.enforce_language_profile:
+        return []
+
+    allowed_by_student = {
+        student.internal_id: {
+            config.class_id
+            for config in class_configs
+            if _student_allowed_by_hard_profiles(student, config, settings)
+        }
+        for student in students
+    }
+    class_by_id = {config.class_id: config for config in class_configs}
+    messages: list[ValidationMessage] = []
+    seen: set[str] = set()
+    class_ids = [config.class_id for config in class_configs]
+
+    for size in range(1, len(class_ids) + 1):
+        for subset_tuple in combinations(class_ids, size):
+            subset = set(subset_tuple)
+            subset_label = ", ".join(subset_tuple)
+            max_capacity = sum(class_by_id[class_id].size_max for class_id in subset)
+            forced_students = sum(
+                1
+                for allowed in allowed_by_student.values()
+                if allowed and allowed.issubset(subset)
+            )
+            if forced_students > max_capacity:
+                key = f"forced:{subset_label}:{forced_students}:{max_capacity}"
+                if key not in seen:
+                    seen.add(key)
+                    messages.append(
+                        ValidationMessage(
+                            "FEHLER",
+                            "Harte Profilregeln sind mit den Klassengrößen unvereinbar: "
+                            f"{forced_students} Schüler dürfen nur in {subset_label}, "
+                            f"dort gibt es maximal {max_capacity} Plätze.",
+                            column="Profil/Kapazität",
+                            value=subset_label,
+                        )
+                    )
+
+            min_required = sum(class_by_id[class_id].size_min for class_id in subset)
+            eligible_students = sum(
+                1
+                for allowed in allowed_by_student.values()
+                if allowed and allowed.intersection(subset)
+            )
+            if eligible_students < min_required:
+                key = f"eligible:{subset_label}:{eligible_students}:{min_required}"
+                if key not in seen:
+                    seen.add(key)
+                    messages.append(
+                        ValidationMessage(
+                            "FEHLER",
+                            "Harte Profilregeln sind mit den Mindestgrößen unvereinbar: "
+                            f"für {subset_label} werden mindestens {min_required} Schüler benötigt, "
+                            f"aber nur {eligible_students} passen in diese Klassen.",
+                            column="Profil/Kapazität",
+                            value=subset_label,
+                        )
+                    )
+
+            if len(messages) >= 10:
+                return messages
+    return messages
+
+
 def _student_allowed_by_hard_profiles(
     student: Student,
     config: ClassConfig,
@@ -216,4 +290,3 @@ def _validate_manual_rules(
         if rule.type == "FIX_CLASS" and not rule.class_id:
             messages.append(ValidationMessage("FEHLER", "Fixierungsregel hat keine Zielklasse."))
     return messages
-
