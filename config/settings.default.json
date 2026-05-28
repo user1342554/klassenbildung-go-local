@@ -1,0 +1,15 @@
+{
+  "enforce_music_profile": true,
+  "enforce_language_profile": true,
+  "weight_friend1": 1000,
+  "weight_friend2": 300,
+  "weight_support_distribution": 250,
+  "weight_gender_balance": 80,
+  "weight_primary_school": 50,
+  "weight_primary_class": 40,
+  "weight_nationality": 10,
+  "weight_religion": 5,
+  "weight_keep_existing": 0,
+  "solver_time_limit_seconds": 30
+}
+

@@ -1,0 +1,52 @@
+{
+  "5a": {
+    "label": "5a S + FL",
+    "music_allowed": ["S", "Reg"],
+    "languages_allowed": ["F", "L"],
+    "size_min": 30,
+    "size_max": 30
+  },
+  "5b": {
+    "label": "5b S + F",
+    "music_allowed": ["S", "Reg"],
+    "languages_allowed": ["F"],
+    "size_min": 30,
+    "size_max": 30
+  },
+  "5c": {
+    "label": "5c B+FL",
+    "music_allowed": ["B", "Reg"],
+    "languages_allowed": ["F", "L"],
+    "size_min": 30,
+    "size_max": 30
+  },
+  "5d": {
+    "label": "5d B + F",
+    "music_allowed": ["B", "Reg"],
+    "languages_allowed": ["F"],
+    "size_min": 30,
+    "size_max": 30
+  },
+  "5e": {
+    "label": "5e G Reg + FL",
+    "music_allowed": ["G", "Reg"],
+    "languages_allowed": ["F", "L"],
+    "size_min": 30,
+    "size_max": 30
+  },
+  "5f": {
+    "label": "5f G + F",
+    "music_allowed": ["G"],
+    "languages_allowed": ["F"],
+    "size_min": 30,
+    "size_max": 30
+  },
+  "5g": {
+    "label": "5g G + F",
+    "music_allowed": ["G"],
+    "languages_allowed": ["F"],
+    "size_min": 29,
+    "size_max": 30
+  }
+}
+
