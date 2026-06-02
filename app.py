@@ -91,7 +91,7 @@ def _settings_tab() -> None:
     st.subheader("Klassenrahmen und Rechenzeit")
     total_students = len(result.students) if result else 210
     class_configs: list[ClassConfig] = st.session_state.class_configs
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     class_count = col1.number_input(
         "Anzahl Klassen",
         min_value=1,
@@ -99,15 +99,14 @@ def _settings_tab() -> None:
         value=len(class_configs) or 7,
         key="settings_class_count",
     )
-    year = col2.number_input("Jahrgang", min_value=1, max_value=13, value=5, key="settings_year")
-    max_size = col3.number_input(
+    max_size = col2.number_input(
         "Max. Klassengröße",
         min_value=1,
         max_value=40,
         value=30,
         key="settings_max_size",
     )
-    time_limit = col4.select_slider(
+    time_limit = col3.select_slider(
         "Max. Rechenzeit",
         options=[10, 30, 60, 120],
         value=current.solver_time_limit_seconds,
@@ -121,11 +120,12 @@ def _settings_tab() -> None:
     preview_configs = generate_class_configs(
         total_students=total_students,
         class_count=int(class_count),
-        year=int(year),
+        year=5,
         max_size=int(max_size),
         existing_profiles=class_configs,
     )
-    st.dataframe(class_configs_to_frame(preview_configs), width="stretch")
+    preview_configs = _without_generated_labels(preview_configs)
+    st.dataframe(_class_size_preview_frame(preview_configs), width="stretch", hide_index=True)
 
     st.subheader("Gewichtungen")
     weight_language_profile = st.slider(
@@ -218,6 +218,23 @@ def _advanced_weight_controls(current: OptimizationSettings) -> dict[str, int]:
     }
 
 
+def _without_generated_labels(class_configs: list[ClassConfig]) -> list[ClassConfig]:
+    return [replace(config, label=config.class_id) for config in class_configs]
+
+
+def _class_size_preview_frame(class_configs: list[ClassConfig]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "Klasse": config.class_id,
+                "min": config.size_min,
+                "max": config.size_max,
+            }
+            for config in class_configs
+        ]
+    )
+
+
 def _upload_tab(settings: OptimizationSettings) -> None:
     st.subheader("Datei laden")
     if DUMMY_EXCEL_PATH.exists():
@@ -249,12 +266,18 @@ def _upload_tab(settings: OptimizationSettings) -> None:
         return
 
     st.subheader(result.source_filename or "Excel-Datei")
-    cols = st.columns(4)
     stats = build_import_statistics(result.students)
+    friend_stats = _friend_wish_stats(result.students)
+    cols = st.columns(5)
     cols[0].metric("Schüler", stats["student_count"])
     cols[1].metric("Klassen", len(result.detected_classes))
     cols[2].metric("Bemerkungen", stats["comment_count"])
     cols[3].metric("R-Markierungen", stats["support_count"])
+    cols[4].metric("Ohne Freundeswunsch", friend_stats["none"])
+    friend_cols = st.columns(3)
+    friend_cols[0].metric("Freundeswunsch 1", friend_stats["friend1"])
+    friend_cols[1].metric("Freundeswunsch 2", friend_stats["friend2"])
+    friend_cols[2].metric("Mindestens ein Wunsch", friend_stats["any"])
 
     st.write("Erkannte Blätter:", ", ".join(result.sheet_names))
     st.write("Erkannte Klassen:", ", ".join(result.detected_classes) or "keine")
@@ -323,7 +346,6 @@ def _class_config_tab() -> None:
         edited_configs: list[ClassConfig] = []
         for config in class_configs:
             with st.expander(config.class_id, expanded=False):
-                label = st.text_input("Label", value=config.label, key=f"label_{config.class_id}")
                 music = st.multiselect(
                     "Musik-Hinweis",
                     options=["Reg", "B", "S", "G"],
@@ -341,7 +363,7 @@ def _class_config_tab() -> None:
                 edited_configs.append(
                     ClassConfig(
                         class_id=config.class_id,
-                        label=label,
+                        label=config.class_id,
                         size_min=int(size_min),
                         size_max=int(size_max),
                         music_allowed=list(music),
@@ -768,6 +790,18 @@ def _overall_distribution_frame(students: list[Student]) -> pd.DataFrame:
         for value, count in values.items():
             rows.append({"Kategorie": category, "Wert": value, "Anzahl": count})
     return pd.DataFrame(rows)
+
+
+def _friend_wish_stats(students: list[Student]) -> dict[str, int]:
+    friend1 = sum(1 for student in students if student.friend1)
+    friend2 = sum(1 for student in students if student.friend2)
+    any_friend = sum(1 for student in students if student.friend1 or student.friend2)
+    return {
+        "friend1": friend1,
+        "friend2": friend2,
+        "any": any_friend,
+        "none": len(students) - any_friend,
+    }
 
 
 def _assignment_quality_frame(
