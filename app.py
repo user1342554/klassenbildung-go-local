@@ -235,10 +235,29 @@ def _class_size_preview_frame(class_configs: list[ClassConfig]) -> pd.DataFrame:
     )
 
 
+def _detected_import_frame(sheet_names: list[str], detected_classes: list[str]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"Bereich": "Blätter", "Wert": ", ".join(sheet_names) or "-"},
+            {"Bereich": "Klassen", "Wert": ", ".join(detected_classes) or "-"},
+        ]
+    )
+
+
+def _friend_wish_frame(friend_stats: dict[str, int]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"Kennzahl": "Freundeswunsch 1 eingetragen", "Anzahl": friend_stats["friend1"]},
+            {"Kennzahl": "Freundeswunsch 2 eingetragen", "Anzahl": friend_stats["friend2"]},
+            {"Kennzahl": "Mindestens ein Wunsch", "Anzahl": friend_stats["any"]},
+            {"Kennzahl": "Ohne Freundeswunsch", "Anzahl": friend_stats["none"]},
+        ]
+    )
+
+
 def _upload_tab(settings: OptimizationSettings) -> None:
     st.subheader("Datei laden")
     if DUMMY_EXCEL_PATH.exists():
-        st.info(f"Testdatei: {DUMMY_EXCEL_PATH.resolve()}")
         col_a, col_b = st.columns([1, 1])
         if col_a.button("Testdatei laden"):
             result = import_excel(DUMMY_EXCEL_PATH.read_bytes(), filename=DUMMY_EXCEL_PATH.name)
@@ -252,6 +271,7 @@ def _upload_tab(settings: OptimizationSettings) -> None:
             file_name=DUMMY_EXCEL_PATH.name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+        st.caption(f"Lokale Testdatei: {DUMMY_EXCEL_PATH.name}")
 
     uploaded = st.file_uploader("Excel-Datei hochladen", type=["xlsx", "xlsm"])
     if uploaded and st.button("Datei prüfen"):
@@ -268,24 +288,27 @@ def _upload_tab(settings: OptimizationSettings) -> None:
     st.subheader(result.source_filename or "Excel-Datei")
     stats = build_import_statistics(result.students)
     friend_stats = _friend_wish_stats(result.students)
-    cols = st.columns(5)
+
+    st.markdown("**Dateiüberblick**")
+    cols = st.columns(4)
     cols[0].metric("Schüler", stats["student_count"])
     cols[1].metric("Klassen", len(result.detected_classes))
     cols[2].metric("Bemerkungen", stats["comment_count"])
     cols[3].metric("R-Markierungen", stats["support_count"])
-    cols[4].metric("Ohne Freundeswunsch", friend_stats["none"])
-    friend_cols = st.columns(3)
-    friend_cols[0].metric("Freundeswunsch 1", friend_stats["friend1"])
-    friend_cols[1].metric("Freundeswunsch 2", friend_stats["friend2"])
-    friend_cols[2].metric("Mindestens ein Wunsch", friend_stats["any"])
 
-    st.write("Erkannte Blätter:", ", ".join(result.sheet_names))
-    st.write("Erkannte Klassen:", ", ".join(result.detected_classes) or "keine")
+    info_col, wish_col = st.columns([1, 1])
+    with info_col:
+        st.markdown("**Erkannt**")
+        st.dataframe(_detected_import_frame(result.sheet_names, result.detected_classes), width="stretch", hide_index=True)
+    with wish_col:
+        st.markdown("**Freundeswünsche**")
+        st.dataframe(_friend_wish_frame(friend_stats), width="stretch", hide_index=True)
 
+    st.markdown("**Verteilungen**")
     col_a, col_b, col_c = st.columns(3)
-    col_a.dataframe(pd.DataFrame(stats["languages"].items(), columns=["Sprache", "Anzahl"]), width="stretch")
-    col_b.dataframe(pd.DataFrame(stats["gender"].items(), columns=["Geschlecht", "Anzahl"]), width="stretch")
-    col_c.dataframe(pd.DataFrame(stats["music"].items(), columns=["Musik", "Anzahl"]), width="stretch")
+    col_a.dataframe(pd.DataFrame(stats["languages"].items(), columns=["Sprache", "Anzahl"]), width="stretch", hide_index=True)
+    col_b.dataframe(pd.DataFrame(stats["gender"].items(), columns=["Geschlecht", "Anzahl"]), width="stretch", hide_index=True)
+    col_c.dataframe(pd.DataFrame(stats["music"].items(), columns=["Musik", "Anzahl"]), width="stretch", hide_index=True)
 
     validation_result = validate_students(
         result.students,
@@ -296,13 +319,13 @@ def _upload_tab(settings: OptimizationSettings) -> None:
     st.session_state.validation_result = validation_result
     if validation_result.has_errors:
         st.error("Diese Datei hat blockierende Fehler.")
-        st.dataframe(messages_to_frame(validation_result.errors), width="stretch")
+        st.dataframe(messages_to_frame(validation_result.errors), width="stretch", hide_index=True)
     else:
         st.success("Datei ist für die Optimierung nutzbar.")
         visible_warnings = _visible_validation_warnings(validation_result.warnings)
         if visible_warnings:
-            with st.expander(f"{len(visible_warnings)} Warnungen anzeigen", expanded=False):
-                st.dataframe(messages_to_frame(visible_warnings), width="stretch")
+            st.warning(f"{len(visible_warnings)} Dinge bitte in der Excel-Datei prüfen.")
+            st.dataframe(messages_to_frame(visible_warnings), width="stretch", hide_index=True)
 
 
 def _validation_tab(settings: OptimizationSettings) -> None:
