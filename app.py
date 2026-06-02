@@ -108,6 +108,22 @@ PREVIOUS_REBALANCED_DEFAULT_WEIGHTS = {
     "weight_religion": 0,
     "weight_keep_existing": 0,
 }
+PREVIOUS_REQUIRED_PROFILE_DEFAULT_WEIGHTS = {
+    "weight_music_profile": 0,
+    "weight_language_profile": 0,
+    "weight_mixed_language_class": 1500,
+    "weight_mixed_music_class": 1500,
+    "weight_friend1": 1800,
+    "weight_friend2": 600,
+    "weight_mutual_friend": 4500,
+    "weight_support_distribution": 300,
+    "weight_gender_balance": 80,
+    "weight_primary_school": 60,
+    "weight_primary_class": 40,
+    "weight_nationality": 5,
+    "weight_religion": 0,
+    "weight_keep_existing": 0,
+}
 
 
 def main() -> None:
@@ -163,6 +179,8 @@ def _migrate_previous_default_weights(settings: OptimizationSettings) -> Optimiz
     if all(getattr(settings, key) == value for key, value in PREVIOUS_DEFAULT_WEIGHTS.items()):
         return replace(settings, **DEFAULT_WEIGHTS)
     if all(getattr(settings, key) == value for key, value in PREVIOUS_REBALANCED_DEFAULT_WEIGHTS.items()):
+        return replace(settings, **DEFAULT_WEIGHTS)
+    if all(getattr(settings, key) == value for key, value in PREVIOUS_REQUIRED_PROFILE_DEFAULT_WEIGHTS.items()):
         return replace(settings, **DEFAULT_WEIGHTS)
     return settings
 
@@ -262,15 +280,15 @@ def _settings_tab() -> None:
         "F/L-Mischklassen vermeiden",
         "weight_mixed_language_class",
         current.weight_mixed_language_class,
-        max_value=10000,
-        step=250,
+        max_value=150000,
+        step=1000,
     )
     weight_mixed_music_class = _weight_slider(
         "Musik-Mischklassen vermeiden",
         "weight_mixed_music_class",
         current.weight_mixed_music_class,
-        max_value=10000,
-        step=250,
+        max_value=150000,
+        step=1000,
     )
 
     advanced = _advanced_weight_values(current)

@@ -19,8 +19,8 @@ def test_settings_from_old_mapping_adds_new_profile_weights() -> None:
     assert settings.weight_friend1 == 123
     assert settings.weight_music_profile == 0
     assert settings.weight_language_profile == 0
-    assert settings.weight_mixed_language_class == 1500
-    assert settings.weight_mixed_music_class == 1500
+    assert settings.weight_mixed_language_class == 50000
+    assert settings.weight_mixed_music_class == 50000
     assert settings.weight_mutual_friend == 4500
 
 
@@ -47,6 +47,6 @@ def test_coerce_old_session_object_adds_missing_fields() -> None:
     assert settings.weight_friend1 == 111
     assert settings.weight_music_profile == 0
     assert settings.weight_language_profile == 0
-    assert settings.weight_mixed_language_class == 1500
-    assert settings.weight_mixed_music_class == 1500
+    assert settings.weight_mixed_language_class == 50000
+    assert settings.weight_mixed_music_class == 50000
     assert settings.weight_mutual_friend == 4500
