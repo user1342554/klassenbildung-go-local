@@ -50,12 +50,12 @@ WEIGHT_HELP = {
         "Gewicht für den zweiten Freundeswunsch. Niedriger als Freund 1, weil der erste Wunsch wichtiger zählt."
     ),
     "weight_mixed_language_class": (
-        "Strafe pro Klasse, in der Französisch und Latein gemischt werden. Höher bedeutet: deutlich weniger "
-        "F/L-Mischklassen, dafür können Freundeswünsche eher getrennt werden."
+        "Die Kinder behalten ihre gewählte Sprache. Dieser Slider bestimmt nur, wie teuer es ist, "
+        "wenn Französisch und Latein in einer Klasse gemischt werden."
     ),
     "weight_mixed_music_class": (
-        "Strafe pro Klasse, in der mehrere Musikprofile wie Bläser, Streicher und Gesang gemischt werden. "
-        "Höher bedeutet: Musikprofile werden stärker getrennt, dafür können Freundeswünsche eher getrennt werden."
+        "Die Kinder behalten ihr gewähltes Musikprofil. Dieser Slider bestimmt nur, wie teuer es ist, "
+        "wenn Bläser, Streicher und Gesang in einer Klasse gemischt werden."
     ),
     "weight_support_distribution": (
         "Verteilt R-/Unterstützungsmarkierungen gleichmäßiger auf die Klassen. Höher bedeutet weniger Ballung."
@@ -269,9 +269,9 @@ def _settings_tab() -> None:
 
     st.subheader("Gewichtungen")
     st.info(
-        "Sprache und Musikprofil bleiben immer beim Schüler erhalten. Es gibt keine harte Zuordnung zu "
-        "vorgefertigten F-, L-, Bläser-, Streicher- oder Gesangsklassen. Mischklassen sind erlaubt, "
-        "aber die beiden Trenn-Slider unten sollen sie so stark wie möglich reduzieren."
+        "Die Kinder behalten ihre gewählte Sprache und ihr gewähltes Musikprofil. "
+        "Diese Slider ändern also keine Wünsche der Kinder. Sie bestimmen nur, wie teuer es für den Solver ist, "
+        "wenn daraus F/L- oder Musik-Mischklassen entstehen."
     )
     st.caption("Große Zahl = wichtiger. 0 bedeutet: dieses weiche Kriterium wird ignoriert.")
     if st.button("Empfohlene Gewichtungen laden", key="settings_reset_weights"):
@@ -283,7 +283,7 @@ def _settings_tab() -> None:
 
     st.markdown("**Sprache und Musik trennen**")
     st.caption(
-        "Diese Regler sind die Hauptsteuerung gegen Mischklassen. Weiter nach rechts = weniger Mischklassen. "
+        "Weiter nach rechts = Mischklassen werden teurer und dadurch seltener. "
         "Wenn danach zu viele Freundeswünsche offen bleiben, diese Werte etwas senken."
     )
     weight_mixed_language_class = _weight_slider(
