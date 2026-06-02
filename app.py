@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+from time import perf_counter
+
 import pandas as pd
 import streamlit as st
 
@@ -27,6 +30,8 @@ from klassenbildung.validation.validator import validate_students
 
 st.set_page_config(page_title="Klassenbildung", layout="wide")
 
+DUMMY_EXCEL_PATH = Path("Dummy_Klassenbildung_FakeDaten.xlsx")
+
 
 def main() -> None:
     st.title("Klassenbildung")
@@ -36,12 +41,11 @@ def main() -> None:
 
     tabs = st.tabs(
         [
-            "1 Upload",
-            "2 Datenprüfung",
-            "3 Klassen",
-            "4 Optimierung",
-            "5 Ergebnis",
-            "6 Bemerkungen",
+            "1 Start",
+            "2 Prüfung",
+            "3 Optimierung",
+            "4 Ergebnis",
+            "5 Details",
         ]
     )
 
@@ -50,12 +54,11 @@ def main() -> None:
     with tabs[1]:
         _validation_tab(settings)
     with tabs[2]:
-        _class_config_tab()
-    with tabs[3]:
         _optimization_tab(settings)
-    with tabs[4]:
+    with tabs[3]:
         _result_tab(settings)
-    with tabs[5]:
+    with tabs[4]:
+        _class_config_tab()
         _comments_tab()
 
 
@@ -72,37 +75,37 @@ def _settings_panel() -> OptimizationSettings:
     current: OptimizationSettings = coerce_settings(st.session_state.settings)
     st.session_state.settings = current
     with st.sidebar:
-        st.header("Regeln")
-        st.header("Gewichtungen")
-        weights = {
+        st.header("Einstellungen")
+        time_limit = st.select_slider(
+            "Rechenzeit",
+            options=[10, 30, 60, 120],
+            value=current.solver_time_limit_seconds,
+        )
+        st.caption("Standard reicht normalerweise. Details nur ändern, wenn ein Ergebnis pädagogisch falsch gewichtet wirkt.")
+
+        simple_weights = {
             "weight_music_profile": current.weight_music_profile,
             "weight_language_profile": current.weight_language_profile,
-            "weight_mixed_language_class": st.slider(
-                "F/L-Mischklassen vermeiden",
-                0,
-                100000,
-                current.weight_mixed_language_class,
-                step=1000,
-            ),
-            "weight_mixed_music_class": st.slider(
-                "Musik-Mischklassen vermeiden",
-                0,
-                100000,
-                current.weight_mixed_music_class,
-                step=1000,
-            ),
-            "weight_friend1": st.slider("Freund 1", 0, 3000, current.weight_friend1, step=50),
-            "weight_friend2": st.slider("Freund 2", 0, 1500, current.weight_friend2, step=50),
-            "weight_mutual_friend": st.slider("Gegenseitige Freunde", 0, 5000, current.weight_mutual_friend, step=100),
-            "weight_support_distribution": st.slider("R-Verteilung", 0, 1000, current.weight_support_distribution, step=25),
-            "weight_gender_balance": st.slider("Geschlecht", 0, 500, current.weight_gender_balance, step=10),
-            "weight_primary_school": st.slider("Grundschule", 0, 500, current.weight_primary_school, step=10),
-            "weight_primary_class": st.slider("Grundschulklasse", 0, 500, current.weight_primary_class, step=10),
-            "weight_nationality": st.slider("Staat/Nationalität", 0, 200, current.weight_nationality, step=5),
-            "weight_religion": st.slider("Religion", 0, 200, current.weight_religion, step=5),
-            "weight_keep_existing": st.slider("bestehende Einteilung behalten", 0, 1000, current.weight_keep_existing, step=25),
+            "weight_mixed_language_class": current.weight_mixed_language_class,
+            "weight_mixed_music_class": current.weight_mixed_music_class,
+            "weight_friend1": current.weight_friend1,
+            "weight_friend2": current.weight_friend2,
+            "weight_mutual_friend": current.weight_mutual_friend,
+            "weight_support_distribution": current.weight_support_distribution,
+            "weight_gender_balance": current.weight_gender_balance,
+            "weight_primary_school": current.weight_primary_school,
+            "weight_primary_class": current.weight_primary_class,
+            "weight_nationality": current.weight_nationality,
+            "weight_religion": current.weight_religion,
+            "weight_keep_existing": current.weight_keep_existing,
         }
-        time_limit = st.select_slider("Zeitlimit Solver", options=[10, 30, 60, 120], value=current.solver_time_limit_seconds)
+
+        with st.expander("Gewichtungen bearbeiten", expanded=False):
+            weights = _weight_controls(current)
+
+        if "weights" not in locals():
+            weights = simple_weights
+
         if st.button("Einstellungen speichern"):
             settings = OptimizationSettings(
                 enforce_music_profile=False,
@@ -122,7 +125,55 @@ def _settings_panel() -> OptimizationSettings:
     )
 
 
+def _weight_controls(current: OptimizationSettings) -> dict[str, int]:
+    return {
+        "weight_music_profile": current.weight_music_profile,
+        "weight_language_profile": current.weight_language_profile,
+        "weight_mixed_language_class": st.slider(
+            "F/L-Mischklassen vermeiden",
+            0,
+            100000,
+            current.weight_mixed_language_class,
+            step=1000,
+        ),
+        "weight_mixed_music_class": st.slider(
+            "Musik-Mischklassen vermeiden",
+            0,
+            100000,
+            current.weight_mixed_music_class,
+            step=1000,
+        ),
+        "weight_friend1": st.slider("Freund 1", 0, 3000, current.weight_friend1, step=50),
+        "weight_friend2": st.slider("Freund 2", 0, 1500, current.weight_friend2, step=50),
+        "weight_mutual_friend": st.slider("Gegenseitige Freunde", 0, 5000, current.weight_mutual_friend, step=100),
+        "weight_support_distribution": st.slider("R-Verteilung", 0, 1000, current.weight_support_distribution, step=25),
+        "weight_gender_balance": st.slider("Geschlecht", 0, 500, current.weight_gender_balance, step=10),
+        "weight_primary_school": st.slider("Grundschule", 0, 500, current.weight_primary_school, step=10),
+        "weight_primary_class": st.slider("Grundschulklasse", 0, 500, current.weight_primary_class, step=10),
+        "weight_nationality": st.slider("Staat/Nationalität", 0, 200, current.weight_nationality, step=5),
+        "weight_religion": st.slider("Religion", 0, 200, current.weight_religion, step=5),
+        "weight_keep_existing": st.slider("bestehende Einteilung behalten", 0, 1000, current.weight_keep_existing, step=25),
+    }
+
+
 def _upload_tab() -> None:
+    st.subheader("Datei laden")
+    if DUMMY_EXCEL_PATH.exists():
+        st.info(f"Testdatei: {DUMMY_EXCEL_PATH.resolve()}")
+        col_a, col_b = st.columns([1, 1])
+        if col_a.button("Testdatei laden"):
+            result = import_excel(DUMMY_EXCEL_PATH.read_bytes(), filename=DUMMY_EXCEL_PATH.name)
+            st.session_state.import_result = result
+            st.session_state.validation_result = None
+            st.session_state.solver_result = None
+            st.rerun()
+        col_b.download_button(
+            "Testdatei herunterladen",
+            data=DUMMY_EXCEL_PATH.read_bytes(),
+            file_name=DUMMY_EXCEL_PATH.name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
     uploaded = st.file_uploader("Excel-Datei hochladen", type=["xlsx", "xlsm"])
     if uploaded and st.button("Datei prüfen"):
         result = import_excel(uploaded, filename=uploaded.name)
@@ -188,56 +239,58 @@ def _class_config_tab() -> None:
     class_configs: list[ClassConfig] = st.session_state.class_configs
 
     total_students = len(result.students) if result else 210
-    col1, col2, col3 = st.columns(3)
-    class_count = col1.number_input("Anzahl Klassen", min_value=1, max_value=15, value=len(class_configs) or 7)
-    year = col2.number_input("Jahrgang", min_value=1, max_value=13, value=5)
-    max_size = col3.number_input("Maximale Klassengröße", min_value=1, max_value=40, value=30)
+    st.subheader("Klassen")
+    st.dataframe(class_configs_to_frame(st.session_state.class_configs), use_container_width=True)
 
-    if st.button("Klassen aus Schülerzahl erzeugen"):
-        st.session_state.class_configs = generate_class_configs(
-            total_students=total_students,
-            class_count=int(class_count),
-            year=int(year),
-            max_size=int(max_size),
-            existing_profiles=class_configs,
-        )
-        st.rerun()
+    with st.expander("Klassen bearbeiten", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        class_count = col1.number_input("Anzahl Klassen", min_value=1, max_value=15, value=len(class_configs) or 7)
+        year = col2.number_input("Jahrgang", min_value=1, max_value=13, value=5)
+        max_size = col3.number_input("Maximale Klassengröße", min_value=1, max_value=40, value=30)
 
-    edited_configs: list[ClassConfig] = []
-    for config in st.session_state.class_configs:
-        with st.expander(config.class_id, expanded=False):
-            label = st.text_input("Label", value=config.label, key=f"label_{config.class_id}")
-            music = st.multiselect(
-                "Musik-Hinweis",
-                options=["Reg", "B", "S", "G"],
-                default=config.music_allowed,
-                key=f"music_{config.class_id}",
+        if st.button("Klassen aus Schülerzahl erzeugen"):
+            st.session_state.class_configs = generate_class_configs(
+                total_students=total_students,
+                class_count=int(class_count),
+                year=int(year),
+                max_size=int(max_size),
+                existing_profiles=class_configs,
             )
-            languages = st.multiselect(
-                "Sprach-Hinweis",
-                options=["F", "L"],
-                default=config.languages_allowed,
-                key=f"lang_{config.class_id}",
-            )
-            size_min = st.number_input("min", min_value=0, max_value=40, value=config.size_min, key=f"min_{config.class_id}")
-            size_max = st.number_input("max", min_value=0, max_value=40, value=config.size_max, key=f"max_{config.class_id}")
-            edited_configs.append(
-                ClassConfig(
-                    class_id=config.class_id,
-                    label=label,
-                    size_min=int(size_min),
-                    size_max=int(size_max),
-                    music_allowed=list(music),
-                    languages_allowed=list(languages),
+            st.rerun()
+
+        edited_configs: list[ClassConfig] = []
+        for config in st.session_state.class_configs:
+            with st.expander(config.class_id, expanded=False):
+                label = st.text_input("Label", value=config.label, key=f"label_{config.class_id}")
+                music = st.multiselect(
+                    "Musik-Hinweis",
+                    options=["Reg", "B", "S", "G"],
+                    default=config.music_allowed,
+                    key=f"music_{config.class_id}",
                 )
-            )
+                languages = st.multiselect(
+                    "Sprach-Hinweis",
+                    options=["F", "L"],
+                    default=config.languages_allowed,
+                    key=f"lang_{config.class_id}",
+                )
+                size_min = st.number_input("min", min_value=0, max_value=40, value=config.size_min, key=f"min_{config.class_id}")
+                size_max = st.number_input("max", min_value=0, max_value=40, value=config.size_max, key=f"max_{config.class_id}")
+                edited_configs.append(
+                    ClassConfig(
+                        class_id=config.class_id,
+                        label=label,
+                        size_min=int(size_min),
+                        size_max=int(size_max),
+                        music_allowed=list(music),
+                        languages_allowed=list(languages),
+                    )
+                )
 
-    if st.button("Klassenprofile speichern"):
-        save_class_configs(edited_configs)
-        st.session_state.class_configs = edited_configs
-        st.success("Klassenprofile gespeichert.")
-
-    st.dataframe(class_configs_to_frame(edited_configs or st.session_state.class_configs), use_container_width=True)
+        if st.button("Klassen speichern"):
+            save_class_configs(edited_configs)
+            st.session_state.class_configs = edited_configs
+            st.success("Klassen gespeichert.")
 
 
 def _optimization_tab(settings: OptimizationSettings) -> None:
@@ -257,9 +310,18 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
         st.dataframe(messages_to_frame(validation_result.errors), use_container_width=True)
         return
 
-    if st.button("Klassen vorschlagen"):
-        solver_result = solve_assignments(result.students, st.session_state.class_configs, settings)
+    if st.button("Klassen vorschlagen", type="primary"):
+        status_box = st.empty()
+        started_at = perf_counter()
+        status_box.info("Optimierung läuft. Der PC rechnet gerade...")
+        with st.spinner("Klassen werden berechnet..."):
+            solver_result = solve_assignments(result.students, st.session_state.class_configs, settings)
         st.session_state.solver_result = solver_result
+        elapsed = perf_counter() - started_at
+        if solver_result.status in {"OPTIMAL", "FEASIBLE"}:
+            status_box.success(f"Optimierung fertig nach {elapsed:.1f} Sekunden.")
+        else:
+            status_box.error(f"Optimierung beendet nach {elapsed:.1f} Sekunden: {solver_result.status}")
 
     solver_result = st.session_state.solver_result
     if solver_result:
