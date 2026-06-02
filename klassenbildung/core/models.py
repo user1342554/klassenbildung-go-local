@@ -83,8 +83,8 @@ class OptimizationSettings:
 
     weight_music_profile: int = 0
     weight_language_profile: int = 0
-    weight_mixed_language_class: int = 1500
-    weight_mixed_music_class: int = 1500
+    weight_mixed_language_class: int = 50000
+    weight_mixed_music_class: int = 50000
     weight_friend1: int = 1800
     weight_friend2: int = 600
     weight_mutual_friend: int = 4500

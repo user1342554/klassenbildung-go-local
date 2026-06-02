@@ -50,12 +50,12 @@ WEIGHT_HELP = {
         "Gewicht für den zweiten Freundeswunsch. Niedriger als Freund 1, weil der erste Wunsch wichtiger zählt."
     ),
     "weight_mixed_language_class": (
-        "Strafe pro Klasse, in der Französisch und Latein gemischt werden. Das verhindert unnötige Mischklassen, "
-        "ohne die gewählte Fremdsprache eines Schülers zu ändern."
+        "Strafe pro Klasse, in der Französisch und Latein gemischt werden. Höher bedeutet: deutlich weniger "
+        "F/L-Mischklassen, dafür können Freundeswünsche eher getrennt werden."
     ),
     "weight_mixed_music_class": (
         "Strafe pro Klasse, in der mehrere Musikprofile wie Bläser, Streicher und Gesang gemischt werden. "
-        "Das reduziert Mischklassen, ohne das gewählte Musikprofil eines Schülers zu ändern."
+        "Höher bedeutet: Musikprofile werden stärker getrennt, dafür können Freundeswünsche eher getrennt werden."
     ),
     "weight_support_distribution": (
         "Verteilt R-/Unterstützungsmarkierungen gleichmäßiger auf die Klassen. Höher bedeutet weniger Ballung."
@@ -200,6 +200,17 @@ def _migrate_previous_default_weights(settings: OptimizationSettings) -> Optimiz
         return replace(settings, **DEFAULT_WEIGHTS)
     if all(getattr(settings, key) == value for key, value in PREVIOUS_STRICT_MIX_DEFAULT_WEIGHTS.items()):
         return replace(settings, **DEFAULT_WEIGHTS)
+    if (
+        settings.weight_music_profile == 0
+        and settings.weight_language_profile == 0
+        and settings.weight_mixed_language_class <= PREVIOUS_REQUIRED_PROFILE_DEFAULT_WEIGHTS["weight_mixed_language_class"]
+        and settings.weight_mixed_music_class <= PREVIOUS_REQUIRED_PROFILE_DEFAULT_WEIGHTS["weight_mixed_music_class"]
+    ):
+        return replace(
+            settings,
+            weight_mixed_language_class=DEFAULT_WEIGHTS["weight_mixed_language_class"],
+            weight_mixed_music_class=DEFAULT_WEIGHTS["weight_mixed_music_class"],
+        )
     return settings
 
 
@@ -259,8 +270,8 @@ def _settings_tab() -> None:
     st.subheader("Gewichtungen")
     st.info(
         "Sprache und Musikprofil bleiben immer beim Schüler erhalten. Es gibt keine harte Zuordnung zu "
-        "vorgefertigten F-, L-, Bläser-, Streicher- oder Gesangsklassen. Mischklassen sind erlaubt; "
-        "die Slider steuern nur, wie stark der Solver unnötige Mischklassen vermeiden soll."
+        "vorgefertigten F-, L-, Bläser-, Streicher- oder Gesangsklassen. Mischklassen sind erlaubt, "
+        "aber die beiden Trenn-Slider unten sollen sie so stark wie möglich reduzieren."
     )
     st.caption("Große Zahl = wichtiger. 0 bedeutet: dieses weiche Kriterium wird ignoriert.")
     if st.button("Empfohlene Gewichtungen laden", key="settings_reset_weights"):
@@ -269,6 +280,26 @@ def _settings_tab() -> None:
         st.session_state.settings = current
         st.session_state.solver_result = None
         st.rerun()
+
+    st.markdown("**Sprache und Musik trennen**")
+    st.caption(
+        "Diese Regler sind die Hauptsteuerung gegen Mischklassen. Weiter nach rechts = weniger Mischklassen. "
+        "Wenn danach zu viele Freundeswünsche offen bleiben, diese Werte etwas senken."
+    )
+    weight_mixed_language_class = _weight_slider(
+        "Französisch/Latein trennen",
+        "weight_mixed_language_class",
+        current.weight_mixed_language_class,
+        max_value=150000,
+        step=1000,
+    )
+    weight_mixed_music_class = _weight_slider(
+        "Musikprofile trennen",
+        "weight_mixed_music_class",
+        current.weight_mixed_music_class,
+        max_value=150000,
+        step=1000,
+    )
 
     st.markdown("**Freundeswünsche**")
     weight_mutual_friend = _weight_slider(
@@ -291,22 +322,6 @@ def _settings_tab() -> None:
         current.weight_friend2,
         max_value=3000,
         step=50,
-    )
-
-    st.markdown("**Mischklassen vermeiden**")
-    weight_mixed_language_class = _weight_slider(
-        "F/L-Mischklassen vermeiden",
-        "weight_mixed_language_class",
-        current.weight_mixed_language_class,
-        max_value=150000,
-        step=1000,
-    )
-    weight_mixed_music_class = _weight_slider(
-        "Musik-Mischklassen vermeiden",
-        "weight_mixed_music_class",
-        current.weight_mixed_music_class,
-        max_value=150000,
-        step=1000,
     )
 
     advanced = _advanced_weight_values(current)
