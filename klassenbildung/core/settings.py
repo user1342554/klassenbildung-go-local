@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -30,13 +30,13 @@ def load_settings() -> OptimizationSettings:
 
 def settings_from_mapping(data: Mapping[str, Any]) -> OptimizationSettings:
     payload = {
-        "enforce_music_profile": True,
-        "enforce_language_profile": True,
+        "enforce_music_profile": bool(data.get("enforce_music_profile", False)),
+        "enforce_language_profile": bool(data.get("enforce_language_profile", False)),
         "solver_time_limit_seconds": int(data.get("solver_time_limit_seconds", 30)),
     }
     for key, default in DEFAULT_WEIGHTS.items():
         payload[key] = int(data.get(key, default))
-    return _force_required_profile_rules(OptimizationSettings(**payload))
+    return OptimizationSettings(**payload)
 
 
 def coerce_settings(value: object | None) -> OptimizationSettings:
@@ -50,21 +50,10 @@ def coerce_settings(value: object | None) -> OptimizationSettings:
         field_name: getattr(value, field_name, getattr(base, field_name))
         for field_name in OptimizationSettings.__dataclass_fields__
     }
-    return _force_required_profile_rules(OptimizationSettings(**payload))
-
-
-def _force_required_profile_rules(settings: OptimizationSettings) -> OptimizationSettings:
-    return replace(
-        settings,
-        enforce_music_profile=True,
-        enforce_language_profile=True,
-        weight_music_profile=0,
-        weight_language_profile=0,
-    )
+    return OptimizationSettings(**payload)
 
 
 def save_settings(settings: OptimizationSettings) -> None:
-    settings = _force_required_profile_rules(settings)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with USER_SETTINGS_PATH.open("w", encoding="utf-8") as handle:
         json.dump(asdict(settings), handle, ensure_ascii=False, indent=2)

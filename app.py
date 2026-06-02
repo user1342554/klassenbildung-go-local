@@ -124,6 +124,22 @@ PREVIOUS_REQUIRED_PROFILE_DEFAULT_WEIGHTS = {
     "weight_religion": 0,
     "weight_keep_existing": 0,
 }
+PREVIOUS_STRICT_MIX_DEFAULT_WEIGHTS = {
+    "weight_music_profile": 0,
+    "weight_language_profile": 0,
+    "weight_mixed_language_class": 50000,
+    "weight_mixed_music_class": 50000,
+    "weight_friend1": 1800,
+    "weight_friend2": 600,
+    "weight_mutual_friend": 4500,
+    "weight_support_distribution": 300,
+    "weight_gender_balance": 80,
+    "weight_primary_school": 60,
+    "weight_primary_class": 40,
+    "weight_nationality": 5,
+    "weight_religion": 0,
+    "weight_keep_existing": 0,
+}
 
 
 def main() -> None:
@@ -170,7 +186,7 @@ def _init_state() -> None:
 def _current_settings() -> OptimizationSettings:
     current: OptimizationSettings = coerce_settings(st.session_state.settings)
     current = _migrate_previous_default_weights(current)
-    current = _force_required_profile_rules(current)
+    current = _disable_fixed_profile_routing(current)
     st.session_state.settings = current
     return current
 
@@ -182,14 +198,16 @@ def _migrate_previous_default_weights(settings: OptimizationSettings) -> Optimiz
         return replace(settings, **DEFAULT_WEIGHTS)
     if all(getattr(settings, key) == value for key, value in PREVIOUS_REQUIRED_PROFILE_DEFAULT_WEIGHTS.items()):
         return replace(settings, **DEFAULT_WEIGHTS)
+    if all(getattr(settings, key) == value for key, value in PREVIOUS_STRICT_MIX_DEFAULT_WEIGHTS.items()):
+        return replace(settings, **DEFAULT_WEIGHTS)
     return settings
 
 
-def _force_required_profile_rules(settings: OptimizationSettings) -> OptimizationSettings:
+def _disable_fixed_profile_routing(settings: OptimizationSettings) -> OptimizationSettings:
     return replace(
         settings,
-        enforce_music_profile=True,
-        enforce_language_profile=True,
+        enforce_music_profile=False,
+        enforce_language_profile=False,
         weight_music_profile=0,
         weight_language_profile=0,
     )
@@ -240,13 +258,13 @@ def _settings_tab() -> None:
 
     st.subheader("Gewichtungen")
     st.info(
-        "Sprache und Musikprofil sind Pflichtregeln. Diese Angaben werden nicht gewichtet: "
-        "Schüler dürfen nur in Klassen landen, die ihre gewählte Fremdsprache und ihr Musikprofil anbieten. "
-        "Gewichtet wird nur, wie stark Mischklassen und andere weiche Ziele vermieden werden."
+        "Sprache und Musikprofil bleiben immer beim Schüler erhalten. Es gibt keine harte Zuordnung zu "
+        "vorgefertigten F-, L-, Bläser-, Streicher- oder Gesangsklassen. Mischklassen sind erlaubt; "
+        "die Slider steuern nur, wie stark der Solver unnötige Mischklassen vermeiden soll."
     )
     st.caption("Große Zahl = wichtiger. 0 bedeutet: dieses weiche Kriterium wird ignoriert.")
     if st.button("Empfohlene Gewichtungen laden", key="settings_reset_weights"):
-        current = _force_required_profile_rules(replace(current, **DEFAULT_WEIGHTS))
+        current = _disable_fixed_profile_routing(replace(current, **DEFAULT_WEIGHTS))
         save_settings(current)
         st.session_state.settings = current
         st.session_state.solver_result = None
@@ -296,8 +314,8 @@ def _settings_tab() -> None:
         advanced = _advanced_weight_controls(current)
 
     settings = OptimizationSettings(
-        enforce_music_profile=True,
-        enforce_language_profile=True,
+        enforce_music_profile=False,
+        enforce_language_profile=False,
         weight_music_profile=0,
         weight_language_profile=0,
         weight_mixed_language_class=weight_mixed_language_class,

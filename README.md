@@ -42,7 +42,7 @@ Version 0.1 bis 0.3 sind als erster lauffähiger Kern angelegt:
 - Anzeige von Bemerkungen ohne automatische Interpretation
 - konfigurierbare Klassenprofile und Gewichtungen über lokale JSON-Dateien
 - einfacher Optimierer mit OR-Tools, plus Fallback ohne OR-Tools
-- Sprach- und Musikwuensche bleiben beim Schueler erhalten; F/L- und Musik-Mischklassen sind moeglich, werden aber gezielt minimiert
+- Sprach- und Musikangaben bleiben beim Schueler erhalten; F/L- und Musik-Mischklassen sind moeglich, werden aber gezielt minimiert
 - Excel-Export mit aktualisiertem `Basis`-Blatt und neuen Klassenblättern
 
 ## Datenschutzgrenzen
