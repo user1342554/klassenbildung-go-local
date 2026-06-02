@@ -43,7 +43,7 @@ def class_configs_to_frame(class_configs: list[ClassConfig]) -> pd.DataFrame:
                 "Klasse": config.class_id,
                 "Label": config.label,
                 "Musik erlaubt": ", ".join(config.music_allowed),
-                "Sprache erlaubt": ", ".join(config.languages_allowed),
+                "Sprachprofil": ", ".join(config.languages_allowed),
                 "min": config.size_min,
                 "max": config.size_max,
             }
@@ -62,6 +62,7 @@ def score_to_class_frame(score_report: ScoreReport) -> pd.DataFrame:
                 "w": report.gender_counts.get("w", 0),
                 "F": report.language_counts.get("F", 0),
                 "L": report.language_counts.get("L", 0),
+                "F/L gemischt": "ja" if report.is_language_mixed else "nein",
                 "Reg": report.music_counts.get("Reg", 0),
                 "B": report.music_counts.get("B", 0),
                 "S": report.music_counts.get("S", 0),
@@ -71,4 +72,3 @@ def score_to_class_frame(score_report: ScoreReport) -> pd.DataFrame:
             for report in score_report.class_reports
         ]
     )
-

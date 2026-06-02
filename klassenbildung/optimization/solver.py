@@ -56,6 +56,7 @@ def solve_assignments(
     objective_terms = []
     _add_friend_terms(model, x, students, class_configs, lambda student: student.friend1, settings.weight_friend1, objective_terms)
     _add_friend_terms(model, x, students, class_configs, lambda student: student.friend2, settings.weight_friend2, objective_terms)
+    _add_mutual_friend_terms(model, x, students, class_configs, settings.weight_mutual_friend, objective_terms)
     _add_soft_profile_terms(
         x,
         students,
@@ -66,16 +67,7 @@ def solve_assignments(
         allowed_getter=lambda config: config.music_allowed,
         objective_terms=objective_terms,
     )
-    _add_soft_profile_terms(
-        x,
-        students,
-        class_configs,
-        enforce_hard=settings.enforce_language_profile,
-        weight=settings.weight_language_profile,
-        student_getter=lambda student: student.second_language,
-        allowed_getter=lambda config: config.languages_allowed,
-        objective_terms=objective_terms,
-    )
+    _add_mixed_language_terms(model, x, students, class_configs, settings.weight_mixed_language_class, objective_terms)
     _add_distribution_terms(
         model,
         x,
@@ -193,6 +185,82 @@ def _add_friend_terms(
             both_vars.append(both)
         model.Add(sum(both_vars) == same)
         objective_terms.append(weight * (1 - same))
+
+
+def _add_mutual_friend_terms(
+    model,
+    x,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    weight: int,
+    objective_terms: list,
+) -> None:
+    if weight <= 0:
+        return
+    for i, j in _mutual_friend_index_pairs(students):
+        same = _same_class_bool(model, x, i, j, len(class_configs), f"mutual_same_{i}_{j}")
+        objective_terms.append(weight * (1 - same))
+
+
+def _mutual_friend_index_pairs(students: list[Student]) -> list[tuple[int, int]]:
+    requests: dict[int, set[int]] = defaultdict(set)
+    for i, student in enumerate(students):
+        for friend_ref in (student.friend1, student.friend2):
+            friend = resolve_student_ref(students, friend_ref)
+            if friend:
+                requests[i].add(students.index(friend))
+
+    pairs: set[tuple[int, int]] = set()
+    for i, requested_indexes in requests.items():
+        for j in requested_indexes:
+            if i in requests.get(j, set()):
+                pairs.add(tuple(sorted((i, j))))
+    return sorted(pairs)
+
+
+def _same_class_bool(model, x, i: int, j: int, class_count: int, label: str):
+    same = model.NewBoolVar(label)
+    both_vars = []
+    for c in range(class_count):
+        both = model.NewBoolVar(f"{label}_both_{c}")
+        model.AddBoolAnd([x[(i, c)], x[(j, c)]]).OnlyEnforceIf(both)
+        model.AddBoolOr([x[(i, c)].Not(), x[(j, c)].Not()]).OnlyEnforceIf(both.Not())
+        both_vars.append(both)
+    model.Add(sum(both_vars) == same)
+    return same
+
+
+def _add_mixed_language_terms(
+    model,
+    x,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    weight: int,
+    objective_terms: list,
+) -> None:
+    if weight <= 0:
+        return
+    f_indexes = [i for i, student in enumerate(students) if student.second_language == "F"]
+    l_indexes = [i for i, student in enumerate(students) if student.second_language == "L"]
+    if not f_indexes or not l_indexes:
+        return
+
+    for c, config in enumerate(class_configs):
+        f_count = model.NewIntVar(0, len(f_indexes), f"language_f_count_{config.class_id}")
+        l_count = model.NewIntVar(0, len(l_indexes), f"language_l_count_{config.class_id}")
+        has_f = model.NewBoolVar(f"language_has_f_{config.class_id}")
+        has_l = model.NewBoolVar(f"language_has_l_{config.class_id}")
+        is_mixed = model.NewBoolVar(f"language_mixed_{config.class_id}")
+
+        model.Add(f_count == sum(x[(i, c)] for i in f_indexes))
+        model.Add(l_count == sum(x[(i, c)] for i in l_indexes))
+        model.Add(f_count >= 1).OnlyEnforceIf(has_f)
+        model.Add(f_count == 0).OnlyEnforceIf(has_f.Not())
+        model.Add(l_count >= 1).OnlyEnforceIf(has_l)
+        model.Add(l_count == 0).OnlyEnforceIf(has_l.Not())
+        model.AddBoolAnd([has_f, has_l]).OnlyEnforceIf(is_mixed)
+        model.AddBoolOr([has_f.Not(), has_l.Not()]).OnlyEnforceIf(is_mixed.Not())
+        objective_terms.append(weight * is_mixed)
 
 
 def _add_soft_profile_terms(

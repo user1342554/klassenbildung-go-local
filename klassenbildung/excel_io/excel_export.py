@@ -92,8 +92,10 @@ def _write_score_sheet(workbook: Workbook, score_report: ScoreReport | None) -> 
     sheet.append(["Harte Regelverletzungen", len(score_report.hard_violations)])
     sheet.append(["Freund 1 erfüllt", f"{score_report.friend1_fulfilled}/{score_report.friend1_total}"])
     sheet.append(["Freund 2 erfüllt", f"{score_report.friend2_fulfilled}/{score_report.friend2_total}"])
+    sheet.append(["Gegenseitige Freunde erfüllt", f"{score_report.mutual_friend_fulfilled}/{score_report.mutual_friend_total}"])
+    sheet.append(["F/L-Mischklassen", score_report.mixed_language_class_count])
     sheet.append([])
-    sheet.append(["Klasse", "Anzahl", "m", "w", "F", "L", "Reg", "B", "S", "G", "R"])
+    sheet.append(["Klasse", "Anzahl", "m", "w", "F", "L", "F/L gemischt", "Reg", "B", "S", "G", "R"])
     for report in score_report.class_reports:
         sheet.append(
             [
@@ -103,6 +105,7 @@ def _write_score_sheet(workbook: Workbook, score_report: ScoreReport | None) -> 
                 report.gender_counts.get("w", 0),
                 report.language_counts.get("F", 0),
                 report.language_counts.get("L", 0),
+                "ja" if report.is_language_mixed else "nein",
                 report.music_counts.get("Reg", 0),
                 report.music_counts.get("B", 0),
                 report.music_counts.get("S", 0),
@@ -129,4 +132,3 @@ def _write_warning_sheet(workbook: Workbook, messages: list[ValidationMessage]) 
                 message.message,
             ]
         )
-

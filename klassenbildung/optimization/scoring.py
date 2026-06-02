@@ -97,10 +97,17 @@ def score_solution(
         settings.weight_friend2,
         "Freund 2",
     )
+    mutual_total, mutual_fulfilled, mutual_penalty, unmet_mutual = _score_mutual_friend_requests(
+        students,
+        assignments,
+        settings.weight_mutual_friend,
+    )
     warnings.extend(unresolved1)
     warnings.extend(unresolved2)
 
-    total_score = friend1_penalty + friend2_penalty
+    mixed_language_class_count = sum(1 for report in class_reports if report.is_language_mixed)
+    total_score = friend1_penalty + friend2_penalty + mutual_penalty
+    total_score += settings.weight_mixed_language_class * mixed_language_class_count
     if not settings.enforce_music_profile:
         total_score += settings.weight_music_profile * _soft_profile_mismatches(
             students,
@@ -108,14 +115,6 @@ def score_solution(
             class_by_id,
             lambda student: student.music_profile,
             lambda config: config.music_allowed,
-        )
-    if not settings.enforce_language_profile:
-        total_score += settings.weight_language_profile * _soft_profile_mismatches(
-            students,
-            assignments,
-            class_by_id,
-            lambda student: student.second_language,
-            lambda config: config.languages_allowed,
         )
     total_score += settings.weight_support_distribution * _scaled_distribution_deviation(
         class_reports,
@@ -150,19 +149,24 @@ def score_solution(
         friend1_fulfilled=friend1_fulfilled,
         friend2_total=friend2_total,
         friend2_fulfilled=friend2_fulfilled,
+        mutual_friend_total=mutual_total,
+        mutual_friend_fulfilled=mutual_fulfilled,
+        mixed_language_class_count=mixed_language_class_count,
         class_reports=class_reports,
         warnings=warnings,
-        unmet_friend_requests=unmet1 + unmet2,
+        unmet_friend_requests=unmet_mutual + unmet1 + unmet2,
     )
 
 
 def _build_class_report(class_id: str, students: list[Student]) -> ClassReport:
+    language_counts = _counter(students, lambda student: student.second_language)
     return ClassReport(
         class_id=class_id,
         size=len(students),
         gender_counts=_counter(students, lambda student: student.gender),
-        language_counts=_counter(students, lambda student: student.second_language),
+        language_counts=language_counts,
         music_counts=_counter(students, lambda student: student.music_profile),
+        is_language_mixed=language_counts.get("F", 0) > 0 and language_counts.get("L", 0) > 0,
         support_count=sum(1 for student in students if student.is_support),
         school_counts=_counter(students, lambda student: student.school),
         religion_counts=_counter(students, lambda student: student.religion),
@@ -199,6 +203,44 @@ def _score_friend_requests(
         else:
             unmet.append(f"{label}: {student.display_label} nicht mit {friend.display_label}")
     return total, fulfilled, (total - fulfilled) * weight, unmet, unresolved
+
+
+def _score_mutual_friend_requests(
+    students: list[Student],
+    assignments: dict[str, str],
+    weight: int,
+) -> tuple[int, int, int, list[str]]:
+    pairs = _mutual_friend_pairs(students)
+    fulfilled = 0
+    unmet: list[str] = []
+    for student_a, student_b in pairs:
+        if assignments.get(student_a.internal_id) == assignments.get(student_b.internal_id):
+            fulfilled += 1
+        else:
+            unmet.append(f"Gegenseitige Freunde: {student_a.display_label} nicht mit {student_b.display_label}")
+    total = len(pairs)
+    return total, fulfilled, (total - fulfilled) * weight, unmet
+
+
+def _mutual_friend_pairs(students: list[Student]) -> list[tuple[Student, Student]]:
+    requests: dict[str, set[str]] = defaultdict(set)
+    student_by_id = {student.internal_id: student for student in students}
+    for student in students:
+        for friend_ref in (student.friend1, student.friend2):
+            friend = resolve_student_ref(students, friend_ref)
+            if friend:
+                requests[student.internal_id].add(friend.internal_id)
+
+    pair_ids: set[tuple[str, str]] = set()
+    for student_id, requested_ids in requests.items():
+        for friend_id in requested_ids:
+            if student_id in requests.get(friend_id, set()):
+                pair_ids.add(tuple(sorted((student_id, friend_id))))
+
+    return [
+        (student_by_id[student_id], student_by_id[friend_id])
+        for student_id, friend_id in sorted(pair_ids)
+    ]
 
 
 def _soft_profile_mismatches(

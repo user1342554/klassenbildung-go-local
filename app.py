@@ -74,11 +74,9 @@ def _settings_panel() -> OptimizationSettings:
     with st.sidebar:
         st.header("Regeln")
         enforce_music = st.checkbox("Musikprofil hart", value=current.enforce_music_profile)
-        enforce_language = st.checkbox("Fremdsprache hart", value=current.enforce_language_profile)
         st.header("Gewichtungen")
         soft_profile_weights = {
             "weight_music_profile": current.weight_music_profile,
-            "weight_language_profile": current.weight_language_profile,
         }
         if not enforce_music:
             soft_profile_weights["weight_music_profile"] = st.slider(
@@ -88,18 +86,19 @@ def _settings_panel() -> OptimizationSettings:
                 current.weight_music_profile,
                 step=50,
             )
-        if not enforce_language:
-            soft_profile_weights["weight_language_profile"] = st.slider(
-                "Fremdsprachen-Abweichung",
-                0,
-                3000,
-                current.weight_language_profile,
-                step=50,
-            )
         weights = {
             **soft_profile_weights,
+            "weight_language_profile": current.weight_language_profile,
+            "weight_mixed_language_class": st.slider(
+                "F/L-Mischklassen vermeiden",
+                0,
+                10000,
+                current.weight_mixed_language_class,
+                step=250,
+            ),
             "weight_friend1": st.slider("Freund 1", 0, 3000, current.weight_friend1, step=50),
             "weight_friend2": st.slider("Freund 2", 0, 1500, current.weight_friend2, step=50),
+            "weight_mutual_friend": st.slider("Gegenseitige Freunde", 0, 5000, current.weight_mutual_friend, step=100),
             "weight_support_distribution": st.slider("R-Verteilung", 0, 1000, current.weight_support_distribution, step=25),
             "weight_gender_balance": st.slider("Geschlecht", 0, 500, current.weight_gender_balance, step=10),
             "weight_primary_school": st.slider("Grundschule", 0, 500, current.weight_primary_school, step=10),
@@ -112,7 +111,7 @@ def _settings_panel() -> OptimizationSettings:
         if st.button("Einstellungen speichern"):
             settings = OptimizationSettings(
                 enforce_music_profile=enforce_music,
-                enforce_language_profile=enforce_language,
+                enforce_language_profile=False,
                 solver_time_limit_seconds=time_limit,
                 **weights,
             )
@@ -122,7 +121,7 @@ def _settings_panel() -> OptimizationSettings:
 
     return OptimizationSettings(
         enforce_music_profile=enforce_music,
-        enforce_language_profile=enforce_language,
+        enforce_language_profile=False,
         solver_time_limit_seconds=time_limit,
         **weights,
     )
@@ -220,7 +219,7 @@ def _class_config_tab() -> None:
                 key=f"music_{config.class_id}",
             )
             languages = st.multiselect(
-                "Sprache erlaubt",
+                "Sprachprofil",
                 options=["F", "L"],
                 default=config.languages_allowed,
                 key=f"lang_{config.class_id}",
@@ -288,11 +287,13 @@ def _result_tab(settings: OptimizationSettings) -> None:
         return
 
     score = solver_result.score_report
-    cols = st.columns(4)
+    cols = st.columns(5)
     cols[0].metric("Schüler", len(result.students))
     cols[1].metric("Klassen", len(st.session_state.class_configs))
     cols[2].metric("Freund 1", f"{score.friend1_fulfilled}/{score.friend1_total}")
     cols[3].metric("Freund 2", f"{score.friend2_fulfilled}/{score.friend2_total}")
+    cols[4].metric("Mischklassen", score.mixed_language_class_count)
+    st.metric("Gegenseitige Freunde", f"{score.mutual_friend_fulfilled}/{score.mutual_friend_total}")
 
     st.subheader("Pro Klasse")
     st.dataframe(score_to_class_frame(score), use_container_width=True)

@@ -42,6 +42,7 @@ Version 0.1 bis 0.3 sind als erster lauffähiger Kern angelegt:
 - Anzeige von Bemerkungen ohne automatische Interpretation
 - konfigurierbare Klassenprofile und Gewichtungen über lokale JSON-Dateien
 - einfacher Optimierer mit OR-Tools, plus Fallback ohne OR-Tools
+- F/L-Mischklassen sind möglich, werden aber gezielt minimiert
 - Excel-Export mit aktualisiertem `Basis`-Blatt und neuen Klassenblättern
 
 ## Datenschutzgrenzen
