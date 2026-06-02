@@ -83,8 +83,8 @@ def class_configs_to_frame(class_configs: list[ClassConfig]) -> pd.DataFrame:
         [
             {
                 "Klasse": config.class_id,
-                "Musik-Hinweis": ", ".join(config.music_allowed),
-                "Sprach-Hinweis": ", ".join(config.languages_allowed),
+                "Musikangebot": ", ".join(config.music_allowed) or "alle",
+                "Sprachangebot": ", ".join(config.languages_allowed) or "alle",
                 "min": config.size_min,
                 "max": config.size_max,
             }

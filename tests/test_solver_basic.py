@@ -48,7 +48,7 @@ def test_solver_can_still_respect_explicit_hard_language_profiles() -> None:
 
 def test_solver_allows_mixed_music_classes_by_default() -> None:
     students = [_student(1, "F", "B"), _student(2, "F", "S")]
-    classes = [ClassConfig("5a", "5a", 2, 2, ["B"], [])]
+    classes = [ClassConfig("5a", "5a", 2, 2, ["B", "S"], [])]
 
     result = solve_assignments(students, classes, OptimizationSettings())
 
@@ -68,7 +68,7 @@ def test_solver_reports_impossible_capacity() -> None:
 
 def test_mixed_language_class_adds_score_penalty() -> None:
     students = [_student(1, "F"), _student(2, "L")]
-    classes = [ClassConfig("5a", "5a", 0, 2, ["Reg"], ["F"])]
+    classes = [ClassConfig("5a", "5a", 0, 2, ["Reg"], ["F", "L"])]
     settings = OptimizationSettings(weight_mixed_language_class=5000)
     assignments = {"s1": "5a", "s2": "5a"}
 

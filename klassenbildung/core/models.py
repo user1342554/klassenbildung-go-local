@@ -78,11 +78,11 @@ class ClassConfig:
 
 @dataclass(frozen=True)
 class OptimizationSettings:
-    enforce_music_profile: bool = False
-    enforce_language_profile: bool = False
+    enforce_music_profile: bool = True
+    enforce_language_profile: bool = True
 
-    weight_music_profile: int = 15000
-    weight_language_profile: int = 15000
+    weight_music_profile: int = 0
+    weight_language_profile: int = 0
     weight_mixed_language_class: int = 1500
     weight_mixed_music_class: int = 1500
     weight_friend1: int = 1800

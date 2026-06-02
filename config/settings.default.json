@@ -1,8 +1,8 @@
 {
-  "enforce_music_profile": false,
-  "enforce_language_profile": false,
-  "weight_music_profile": 15000,
-  "weight_language_profile": 15000,
+  "enforce_music_profile": true,
+  "enforce_language_profile": true,
+  "weight_music_profile": 0,
+  "weight_language_profile": 0,
   "weight_mixed_language_class": 1500,
   "weight_mixed_music_class": 1500,
   "weight_friend1": 1800,

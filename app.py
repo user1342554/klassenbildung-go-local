@@ -38,14 +38,6 @@ DUMMY_EXCEL_PATH = Path("Dummy_Klassenbildung_FakeDaten.xlsx")
 COMMENT_REVIEW_MESSAGE = "Bemerkung muss manuell geprüft werden."
 
 WEIGHT_HELP = {
-    "weight_language_profile": (
-        "Sehr wichtig: Ein Schüler mit Französisch/Latein-Wunsch soll in eine Klasse passen, "
-        "die diese Sprache anbietet. Hoch lassen, damit Sprachwünsche praktisch immer erfüllt werden."
-    ),
-    "weight_music_profile": (
-        "Sehr wichtig: Musikwünsche wie Bläser, Streicher, Gesang oder Regulär sollen zur Klasse passen. "
-        "Hoch lassen, damit der Solver lieber Mischklassen bildet als Musikwünsche zu verletzen."
-    ),
     "weight_mutual_friend": (
         "Zusatzgewicht, wenn zwei Schüler sich gegenseitig nennen. Das kommt zusätzlich zu den normalen "
         "Freundeswunsch-Gewichten und ist deshalb stärker als ein einseitiger Wunsch."
@@ -59,17 +51,17 @@ WEIGHT_HELP = {
     ),
     "weight_mixed_language_class": (
         "Strafe pro Klasse, in der Französisch und Latein gemischt werden. Das verhindert unnötige Mischklassen, "
-        "ist aber niedriger als die Strafe für verletzte Sprachwünsche."
+        "ohne die gewählte Fremdsprache eines Schülers zu ändern."
     ),
     "weight_mixed_music_class": (
         "Strafe pro Klasse, in der mehrere Musikprofile wie Bläser, Streicher und Gesang gemischt werden. "
-        "Das reduziert Mischklassen, ohne Musik-/Sprachwünsche zu brechen."
+        "Das reduziert Mischklassen, ohne das gewählte Musikprofil eines Schülers zu ändern."
     ),
     "weight_support_distribution": (
         "Verteilt R-/Unterstützungsmarkierungen gleichmäßiger auf die Klassen. Höher bedeutet weniger Ballung."
     ),
     "weight_gender_balance": (
-        "Versucht m/w ungefähr gleichmäßig zu verteilen. Sollte niedriger bleiben als Freundes- und Profilwünsche."
+        "Versucht m/w ungefähr gleichmäßig zu verteilen. Sollte niedriger bleiben als Freundeswünsche."
     ),
     "weight_primary_school": (
         "Verhindert zu starke Ballungen aus derselben abgebenden Grundschule. Es ist keine Trennungsregel."
@@ -98,6 +90,22 @@ PREVIOUS_DEFAULT_WEIGHTS = {
     "weight_primary_class": 40,
     "weight_nationality": 10,
     "weight_religion": 5,
+    "weight_keep_existing": 0,
+}
+PREVIOUS_REBALANCED_DEFAULT_WEIGHTS = {
+    "weight_music_profile": 15000,
+    "weight_language_profile": 15000,
+    "weight_mixed_language_class": 1500,
+    "weight_mixed_music_class": 1500,
+    "weight_friend1": 1800,
+    "weight_friend2": 600,
+    "weight_mutual_friend": 4500,
+    "weight_support_distribution": 300,
+    "weight_gender_balance": 80,
+    "weight_primary_school": 60,
+    "weight_primary_class": 40,
+    "weight_nationality": 5,
+    "weight_religion": 0,
     "weight_keep_existing": 0,
 }
 
@@ -146,6 +154,7 @@ def _init_state() -> None:
 def _current_settings() -> OptimizationSettings:
     current: OptimizationSettings = coerce_settings(st.session_state.settings)
     current = _migrate_previous_default_weights(current)
+    current = _force_required_profile_rules(current)
     st.session_state.settings = current
     return current
 
@@ -153,7 +162,19 @@ def _current_settings() -> OptimizationSettings:
 def _migrate_previous_default_weights(settings: OptimizationSettings) -> OptimizationSettings:
     if all(getattr(settings, key) == value for key, value in PREVIOUS_DEFAULT_WEIGHTS.items()):
         return replace(settings, **DEFAULT_WEIGHTS)
+    if all(getattr(settings, key) == value for key, value in PREVIOUS_REBALANCED_DEFAULT_WEIGHTS.items()):
+        return replace(settings, **DEFAULT_WEIGHTS)
     return settings
+
+
+def _force_required_profile_rules(settings: OptimizationSettings) -> OptimizationSettings:
+    return replace(
+        settings,
+        enforce_music_profile=True,
+        enforce_language_profile=True,
+        weight_music_profile=0,
+        weight_language_profile=0,
+    )
 
 
 def _settings_tab() -> None:
@@ -200,29 +221,20 @@ def _settings_tab() -> None:
     st.dataframe(_class_size_preview_frame(preview_configs), width="stretch", hide_index=True)
 
     st.subheader("Gewichtungen")
-    st.caption("Große Zahl = wichtiger. 0 bedeutet: dieses Kriterium wird ignoriert.")
+    st.info(
+        "Sprache und Musikprofil sind Pflichtregeln. Diese Angaben werden nicht gewichtet: "
+        "Schüler dürfen nur in Klassen landen, die ihre gewählte Fremdsprache und ihr Musikprofil anbieten. "
+        "Gewichtet wird nur, wie stark Mischklassen und andere weiche Ziele vermieden werden."
+    )
+    st.caption("Große Zahl = wichtiger. 0 bedeutet: dieses weiche Kriterium wird ignoriert.")
     if st.button("Empfohlene Gewichtungen laden", key="settings_reset_weights"):
-        current = replace(current, **DEFAULT_WEIGHTS)
+        current = _force_required_profile_rules(replace(current, **DEFAULT_WEIGHTS))
         save_settings(current)
         st.session_state.settings = current
         st.session_state.solver_result = None
         st.rerun()
 
-    st.markdown("**Wünsche erfüllen**")
-    weight_language_profile = _weight_slider(
-        "Sprachwunsch erfüllen",
-        "weight_language_profile",
-        current.weight_language_profile,
-        max_value=25000,
-        step=500,
-    )
-    weight_music_profile = _weight_slider(
-        "Musikwunsch erfüllen",
-        "weight_music_profile",
-        current.weight_music_profile,
-        max_value=25000,
-        step=500,
-    )
+    st.markdown("**Freundeswünsche**")
     weight_mutual_friend = _weight_slider(
         "Gegenseitige Freunde zusammenhalten",
         "weight_mutual_friend",
@@ -266,10 +278,10 @@ def _settings_tab() -> None:
         advanced = _advanced_weight_controls(current)
 
     settings = OptimizationSettings(
-        enforce_music_profile=False,
-        enforce_language_profile=False,
-        weight_music_profile=weight_music_profile,
-        weight_language_profile=weight_language_profile,
+        enforce_music_profile=True,
+        enforce_language_profile=True,
+        weight_music_profile=0,
+        weight_language_profile=0,
         weight_mixed_language_class=weight_mixed_language_class,
         weight_mixed_music_class=weight_mixed_music_class,
         weight_friend1=weight_friend1,
@@ -519,16 +531,18 @@ def _class_config_tab() -> None:
         for config in class_configs:
             with st.expander(config.class_id, expanded=False):
                 music = st.multiselect(
-                    "Musik-Hinweis",
+                    "Musikangebot",
                     options=["Reg", "B", "S", "G"],
                     default=config.music_allowed,
                     key=f"music_{config.class_id}",
+                    help="Harte Regel: Nur Schüler mit einem dieser Musikprofile dürfen in diese Klasse. Leer bedeutet: alle Musikprofile sind möglich.",
                 )
                 languages = st.multiselect(
-                    "Sprach-Hinweis",
+                    "Sprachangebot",
                     options=["F", "L"],
                     default=config.languages_allowed,
                     key=f"lang_{config.class_id}",
+                    help="Harte Regel: Nur Schüler mit einer dieser Fremdsprachen dürfen in diese Klasse. Leer bedeutet: beide Sprachen sind möglich.",
                 )
                 size_min = st.number_input("min", min_value=0, max_value=40, value=config.size_min, key=f"min_{config.class_id}")
                 size_max = st.number_input("max", min_value=0, max_value=40, value=config.size_max, key=f"max_{config.class_id}")
