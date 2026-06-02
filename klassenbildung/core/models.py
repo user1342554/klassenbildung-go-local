@@ -78,12 +78,13 @@ class ClassConfig:
 
 @dataclass(frozen=True)
 class OptimizationSettings:
-    enforce_music_profile: bool = True
+    enforce_music_profile: bool = False
     enforce_language_profile: bool = False
 
     weight_music_profile: int = 800
     weight_language_profile: int = 800
-    weight_mixed_language_class: int = 5000
+    weight_mixed_language_class: int = 50000
+    weight_mixed_music_class: int = 50000
     weight_friend1: int = 1000
     weight_friend2: int = 300
     weight_mutual_friend: int = 2500
@@ -141,6 +142,7 @@ class ClassReport:
     language_counts: dict[str, int]
     music_counts: dict[str, int]
     is_language_mixed: bool
+    is_music_mixed: bool
     support_count: int
     school_counts: dict[str, int]
     religion_counts: dict[str, int]
@@ -159,6 +161,7 @@ class ScoreReport:
     mutual_friend_total: int
     mutual_friend_fulfilled: int
     mixed_language_class_count: int
+    mixed_music_class_count: int
 
     class_reports: list[ClassReport]
     warnings: list[str] = field(default_factory=list)

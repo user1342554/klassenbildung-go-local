@@ -30,7 +30,7 @@ def load_settings() -> OptimizationSettings:
 
 def settings_from_mapping(data: Mapping[str, Any]) -> OptimizationSettings:
     payload = {
-        "enforce_music_profile": bool(data.get("enforce_music_profile", True)),
+        "enforce_music_profile": bool(data.get("enforce_music_profile", False)),
         "enforce_language_profile": bool(data.get("enforce_language_profile", False)),
         "solver_time_limit_seconds": int(data.get("solver_time_limit_seconds", 30)),
     }

@@ -94,8 +94,9 @@ def _write_score_sheet(workbook: Workbook, score_report: ScoreReport | None) -> 
     sheet.append(["Freund 2 erfüllt", f"{score_report.friend2_fulfilled}/{score_report.friend2_total}"])
     sheet.append(["Gegenseitige Freunde erfüllt", f"{score_report.mutual_friend_fulfilled}/{score_report.mutual_friend_total}"])
     sheet.append(["F/L-Mischklassen", score_report.mixed_language_class_count])
+    sheet.append(["Musik-Mischklassen", score_report.mixed_music_class_count])
     sheet.append([])
-    sheet.append(["Klasse", "Anzahl", "m", "w", "F", "L", "F/L gemischt", "Reg", "B", "S", "G", "R"])
+    sheet.append(["Klasse", "Anzahl", "m", "w", "F", "L", "F/L gemischt", "Reg", "B", "S", "G", "Musik gemischt", "R"])
     for report in score_report.class_reports:
         sheet.append(
             [
@@ -110,6 +111,7 @@ def _write_score_sheet(workbook: Workbook, score_report: ScoreReport | None) -> 
                 report.music_counts.get("B", 0),
                 report.music_counts.get("S", 0),
                 report.music_counts.get("G", 0),
+                "ja" if report.is_music_mixed else "nein",
                 report.support_count,
             ]
         )

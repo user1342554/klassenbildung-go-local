@@ -39,10 +39,13 @@ def test_validator_detects_profile_capacity_conflict_before_solver() -> None:
         ClassConfig("5b", "5b G", 1, 2, ["G"], ["F"]),
     ]
 
-    validation = validate_students(students, classes, OptimizationSettings())
+    validation = validate_students(
+        students,
+        classes,
+        OptimizationSettings(enforce_music_profile=True, enforce_language_profile=True),
+    )
 
     assert any(
         "Harte Profilregeln sind mit den Klassengrößen unvereinbar" in message.message
         for message in validation.errors
     )
-

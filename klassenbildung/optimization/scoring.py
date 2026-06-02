@@ -106,16 +106,10 @@ def score_solution(
     warnings.extend(unresolved2)
 
     mixed_language_class_count = sum(1 for report in class_reports if report.is_language_mixed)
+    mixed_music_class_count = sum(1 for report in class_reports if report.is_music_mixed)
     total_score = friend1_penalty + friend2_penalty + mutual_penalty
     total_score += settings.weight_mixed_language_class * mixed_language_class_count
-    if not settings.enforce_music_profile:
-        total_score += settings.weight_music_profile * _soft_profile_mismatches(
-            students,
-            assignments,
-            class_by_id,
-            lambda student: student.music_profile,
-            lambda config: config.music_allowed,
-        )
+    total_score += settings.weight_mixed_music_class * mixed_music_class_count
     total_score += settings.weight_support_distribution * _scaled_distribution_deviation(
         class_reports,
         lambda report: report.support_count,
@@ -152,6 +146,7 @@ def score_solution(
         mutual_friend_total=mutual_total,
         mutual_friend_fulfilled=mutual_fulfilled,
         mixed_language_class_count=mixed_language_class_count,
+        mixed_music_class_count=mixed_music_class_count,
         class_reports=class_reports,
         warnings=warnings,
         unmet_friend_requests=unmet_mutual + unmet1 + unmet2,
@@ -160,18 +155,28 @@ def score_solution(
 
 def _build_class_report(class_id: str, students: list[Student]) -> ClassReport:
     language_counts = _counter(students, lambda student: student.second_language)
+    music_counts = _counter(students, lambda student: student.music_profile)
     return ClassReport(
         class_id=class_id,
         size=len(students),
         gender_counts=_counter(students, lambda student: student.gender),
         language_counts=language_counts,
-        music_counts=_counter(students, lambda student: student.music_profile),
+        music_counts=music_counts,
         is_language_mixed=language_counts.get("F", 0) > 0 and language_counts.get("L", 0) > 0,
+        is_music_mixed=_has_mixed_music_focus(music_counts),
         support_count=sum(1 for student in students if student.is_support),
         school_counts=_counter(students, lambda student: student.school),
         religion_counts=_counter(students, lambda student: student.religion),
         nationality_counts=_counter(students, lambda student: student.nationality),
     )
+
+
+def _has_mixed_music_focus(music_counts: dict[str, int]) -> bool:
+    focus_profiles = {"B", "S", "G"}
+    present_focus_profiles = [
+        profile for profile in focus_profiles if music_counts.get(profile, 0) > 0
+    ]
+    return len(present_focus_profiles) > 1
 
 
 def _counter(students: list[Student], getter: Callable[[Student], str | None]) -> dict[str, int]:

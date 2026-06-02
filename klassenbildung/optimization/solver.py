@@ -57,17 +57,8 @@ def solve_assignments(
     _add_friend_terms(model, x, students, class_configs, lambda student: student.friend1, settings.weight_friend1, objective_terms)
     _add_friend_terms(model, x, students, class_configs, lambda student: student.friend2, settings.weight_friend2, objective_terms)
     _add_mutual_friend_terms(model, x, students, class_configs, settings.weight_mutual_friend, objective_terms)
-    _add_soft_profile_terms(
-        x,
-        students,
-        class_configs,
-        enforce_hard=settings.enforce_music_profile,
-        weight=settings.weight_music_profile,
-        student_getter=lambda student: student.music_profile,
-        allowed_getter=lambda config: config.music_allowed,
-        objective_terms=objective_terms,
-    )
     _add_mixed_language_terms(model, x, students, class_configs, settings.weight_mixed_language_class, objective_terms)
+    _add_mixed_music_terms(model, x, students, class_configs, settings.weight_mixed_music_class, objective_terms)
     _add_distribution_terms(
         model,
         x,
@@ -260,6 +251,49 @@ def _add_mixed_language_terms(
         model.Add(l_count == 0).OnlyEnforceIf(has_l.Not())
         model.AddBoolAnd([has_f, has_l]).OnlyEnforceIf(is_mixed)
         model.AddBoolOr([has_f.Not(), has_l.Not()]).OnlyEnforceIf(is_mixed.Not())
+        objective_terms.append(weight * is_mixed)
+
+
+def _add_mixed_music_terms(
+    model,
+    x,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    weight: int,
+    objective_terms: list,
+) -> None:
+    if weight <= 0:
+        return
+
+    focus_profiles = ("B", "S", "G")
+    profile_indexes = {
+        profile: [
+            i for i, student in enumerate(students) if student.music_profile == profile
+        ]
+        for profile in focus_profiles
+    }
+    if sum(1 for indexes in profile_indexes.values() if indexes) <= 1:
+        return
+
+    for c, config in enumerate(class_configs):
+        has_profile = {}
+        for profile, indexes in profile_indexes.items():
+            profile_count = model.NewIntVar(0, len(indexes), f"music_{profile}_count_{config.class_id}")
+            has_profile[profile] = model.NewBoolVar(f"music_has_{profile}_{config.class_id}")
+            model.Add(profile_count == sum(x[(i, c)] for i in indexes))
+            model.Add(profile_count >= 1).OnlyEnforceIf(has_profile[profile])
+            model.Add(profile_count == 0).OnlyEnforceIf(has_profile[profile].Not())
+
+        pair_mixed_vars = []
+        for index, profile_a in enumerate(focus_profiles):
+            for profile_b in focus_profiles[index + 1 :]:
+                pair_mixed = model.NewBoolVar(f"music_mixed_{profile_a}_{profile_b}_{config.class_id}")
+                model.AddBoolAnd([has_profile[profile_a], has_profile[profile_b]]).OnlyEnforceIf(pair_mixed)
+                model.AddBoolOr([has_profile[profile_a].Not(), has_profile[profile_b].Not()]).OnlyEnforceIf(pair_mixed.Not())
+                pair_mixed_vars.append(pair_mixed)
+
+        is_mixed = model.NewBoolVar(f"music_mixed_{config.class_id}")
+        model.AddMaxEquality(is_mixed, pair_mixed_vars)
         objective_terms.append(weight * is_mixed)
 
 

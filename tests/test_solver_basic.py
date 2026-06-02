@@ -46,6 +46,18 @@ def test_solver_can_still_respect_explicit_hard_language_profiles() -> None:
     assert {result.assignments["s3"], result.assignments["s4"]} == {"5b"}
 
 
+def test_solver_allows_mixed_music_classes_by_default() -> None:
+    students = [_student(1, "F", "B"), _student(2, "F", "S")]
+    classes = [ClassConfig("5a", "5a", 2, 2, ["B"], [])]
+
+    result = solve_assignments(students, classes, OptimizationSettings())
+
+    assert result.status in {"OPTIMAL", "FEASIBLE"}
+    assert result.score_report
+    assert not result.score_report.hard_violations
+    assert result.score_report.mixed_music_class_count == 1
+
+
 def test_solver_reports_impossible_capacity() -> None:
     students = [_student(1, "F"), _student(2, "F")]
     classes = [ClassConfig("5a", "5a", 0, 1, ["Reg"], ["F"])]
@@ -63,6 +75,19 @@ def test_mixed_language_class_adds_score_penalty() -> None:
     score = score_solution(students, assignments, settings, classes)
 
     assert score.mixed_language_class_count == 1
+    assert score.total_score >= 5000
+    assert not score.hard_violations
+
+
+def test_mixed_music_class_adds_score_penalty() -> None:
+    students = [_student(1, "F", "B"), _student(2, "F", "S")]
+    classes = [ClassConfig("5a", "5a", 0, 2, [], [])]
+    settings = OptimizationSettings(weight_mixed_music_class=5000)
+    assignments = {"s1": "5a", "s2": "5a"}
+
+    score = score_solution(students, assignments, settings, classes)
+
+    assert score.mixed_music_class_count == 1
     assert score.total_score >= 5000
     assert not score.hard_violations
 

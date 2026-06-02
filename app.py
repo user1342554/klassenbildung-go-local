@@ -73,28 +73,23 @@ def _settings_panel() -> OptimizationSettings:
     st.session_state.settings = current
     with st.sidebar:
         st.header("Regeln")
-        enforce_music = st.checkbox("Musikprofil hart", value=current.enforce_music_profile)
         st.header("Gewichtungen")
-        soft_profile_weights = {
-            "weight_music_profile": current.weight_music_profile,
-        }
-        if not enforce_music:
-            soft_profile_weights["weight_music_profile"] = st.slider(
-                "Musikprofil-Abweichung",
-                0,
-                3000,
-                current.weight_music_profile,
-                step=50,
-            )
         weights = {
-            **soft_profile_weights,
+            "weight_music_profile": current.weight_music_profile,
             "weight_language_profile": current.weight_language_profile,
             "weight_mixed_language_class": st.slider(
                 "F/L-Mischklassen vermeiden",
                 0,
-                10000,
+                100000,
                 current.weight_mixed_language_class,
-                step=250,
+                step=1000,
+            ),
+            "weight_mixed_music_class": st.slider(
+                "Musik-Mischklassen vermeiden",
+                0,
+                100000,
+                current.weight_mixed_music_class,
+                step=1000,
             ),
             "weight_friend1": st.slider("Freund 1", 0, 3000, current.weight_friend1, step=50),
             "weight_friend2": st.slider("Freund 2", 0, 1500, current.weight_friend2, step=50),
@@ -110,7 +105,7 @@ def _settings_panel() -> OptimizationSettings:
         time_limit = st.select_slider("Zeitlimit Solver", options=[10, 30, 60, 120], value=current.solver_time_limit_seconds)
         if st.button("Einstellungen speichern"):
             settings = OptimizationSettings(
-                enforce_music_profile=enforce_music,
+                enforce_music_profile=False,
                 enforce_language_profile=False,
                 solver_time_limit_seconds=time_limit,
                 **weights,
@@ -120,7 +115,7 @@ def _settings_panel() -> OptimizationSettings:
             st.success("Einstellungen gespeichert.")
 
     return OptimizationSettings(
-        enforce_music_profile=enforce_music,
+        enforce_music_profile=False,
         enforce_language_profile=False,
         solver_time_limit_seconds=time_limit,
         **weights,
@@ -213,13 +208,13 @@ def _class_config_tab() -> None:
         with st.expander(config.class_id, expanded=False):
             label = st.text_input("Label", value=config.label, key=f"label_{config.class_id}")
             music = st.multiselect(
-                "Musik erlaubt",
+                "Musik-Hinweis",
                 options=["Reg", "B", "S", "G"],
                 default=config.music_allowed,
                 key=f"music_{config.class_id}",
             )
             languages = st.multiselect(
-                "Sprachprofil",
+                "Sprach-Hinweis",
                 options=["F", "L"],
                 default=config.languages_allowed,
                 key=f"lang_{config.class_id}",
@@ -287,12 +282,13 @@ def _result_tab(settings: OptimizationSettings) -> None:
         return
 
     score = solver_result.score_report
-    cols = st.columns(5)
+    cols = st.columns(6)
     cols[0].metric("Schüler", len(result.students))
     cols[1].metric("Klassen", len(st.session_state.class_configs))
     cols[2].metric("Freund 1", f"{score.friend1_fulfilled}/{score.friend1_total}")
     cols[3].metric("Freund 2", f"{score.friend2_fulfilled}/{score.friend2_total}")
-    cols[4].metric("Mischklassen", score.mixed_language_class_count)
+    cols[4].metric("F/L-Mix", score.mixed_language_class_count)
+    cols[5].metric("Musik-Mix", score.mixed_music_class_count)
     st.metric("Gegenseitige Freunde", f"{score.mutual_friend_fulfilled}/{score.mutual_friend_total}")
 
     st.subheader("Pro Klasse")

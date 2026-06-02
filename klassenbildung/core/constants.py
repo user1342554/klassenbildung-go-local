@@ -43,7 +43,8 @@ MUSIC_FLAG_COLUMNS = {
 DEFAULT_WEIGHTS = {
     "weight_music_profile": 800,
     "weight_language_profile": 800,
-    "weight_mixed_language_class": 5000,
+    "weight_mixed_language_class": 50000,
+    "weight_mixed_music_class": 50000,
     "weight_friend1": 1000,
     "weight_friend2": 300,
     "weight_mutual_friend": 2500,
