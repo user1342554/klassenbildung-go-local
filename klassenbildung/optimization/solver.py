@@ -59,6 +59,26 @@ def solve_assignments(
     _add_mutual_friend_terms(model, x, students, class_configs, settings.weight_mutual_friend, objective_terms)
     _add_mixed_language_terms(model, x, students, class_configs, settings.weight_mixed_language_class, objective_terms)
     _add_mixed_music_terms(model, x, students, class_configs, settings.weight_mixed_music_class, objective_terms)
+    _add_soft_profile_terms(
+        x,
+        students,
+        class_configs,
+        settings.enforce_music_profile,
+        settings.weight_music_profile,
+        lambda student: student.music_profile,
+        lambda config: config.music_allowed,
+        objective_terms,
+    )
+    _add_soft_profile_terms(
+        x,
+        students,
+        class_configs,
+        settings.enforce_language_profile,
+        settings.weight_language_profile,
+        lambda student: student.second_language,
+        lambda config: config.languages_allowed,
+        objective_terms,
+    )
     _add_distribution_terms(
         model,
         x,

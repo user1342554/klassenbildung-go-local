@@ -14,4 +14,4 @@ def test_known_data_problems_create_warnings(sample_workbook_bytes: bytes) -> No
     assert "Schülernummer fehlt." in warning_text
     assert "Bemerkung muss manuell geprüft werden." in warning_text
     assert "Grundschulklasse wirkt uneinheitlich geschrieben." in warning_text
-
+    assert "Kein Freundeswunsch eingetragen." in warning_text

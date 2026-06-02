@@ -88,14 +88,14 @@ def score_solution(
         assignments,
         lambda student: student.friend1,
         settings.weight_friend1,
-        "Freund 1",
+        "Freundeswunsch 1",
     )
     friend2_total, friend2_fulfilled, friend2_penalty, unmet2, unresolved2 = _score_friend_requests(
         students,
         assignments,
         lambda student: student.friend2,
         settings.weight_friend2,
-        "Freund 2",
+        "Freundeswunsch 2",
     )
     mutual_total, mutual_fulfilled, mutual_penalty, unmet_mutual = _score_mutual_friend_requests(
         students,
@@ -110,6 +110,22 @@ def score_solution(
     total_score = friend1_penalty + friend2_penalty + mutual_penalty
     total_score += settings.weight_mixed_language_class * mixed_language_class_count
     total_score += settings.weight_mixed_music_class * mixed_music_class_count
+    if not settings.enforce_music_profile:
+        total_score += settings.weight_music_profile * _soft_profile_mismatches(
+            students,
+            assignments,
+            class_by_id,
+            lambda student: student.music_profile,
+            lambda config: config.music_allowed,
+        )
+    if not settings.enforce_language_profile:
+        total_score += settings.weight_language_profile * _soft_profile_mismatches(
+            students,
+            assignments,
+            class_by_id,
+            lambda student: student.second_language,
+            lambda config: config.languages_allowed,
+        )
     total_score += settings.weight_support_distribution * _scaled_distribution_deviation(
         class_reports,
         lambda report: report.support_count,

@@ -88,10 +88,10 @@ def _write_score_sheet(workbook: Workbook, score_report: ScoreReport | None) -> 
     if not score_report:
         sheet.append(["Status", "Keine Auswertung vorhanden"])
         return
-    sheet.append(["Gesamtscore", score_report.total_score])
+    sheet.append(["Technischer Score", score_report.total_score])
     sheet.append(["Harte Regelverletzungen", len(score_report.hard_violations)])
-    sheet.append(["Freund 1 erfüllt", f"{score_report.friend1_fulfilled}/{score_report.friend1_total}"])
-    sheet.append(["Freund 2 erfüllt", f"{score_report.friend2_fulfilled}/{score_report.friend2_total}"])
+    sheet.append(["Freundeswunsch 1 erfüllt", f"{score_report.friend1_fulfilled}/{score_report.friend1_total}"])
+    sheet.append(["Freundeswunsch 2 erfüllt", f"{score_report.friend2_fulfilled}/{score_report.friend2_total}"])
     sheet.append(["Gegenseitige Freunde erfüllt", f"{score_report.mutual_friend_fulfilled}/{score_report.mutual_friend_total}"])
     sheet.append(["F/L-Mischklassen", score_report.mixed_language_class_count])
     sheet.append(["Musik-Mischklassen", score_report.mixed_music_class_count])

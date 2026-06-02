@@ -163,6 +163,16 @@ def _validate_student_fields(students: list[Student]) -> list[ValidationMessage]
                     student.comment,
                 )
             )
+        if not student.friend1 and not student.friend2:
+            messages.append(
+                ValidationMessage(
+                    "WARNUNG",
+                    "Kein Freundeswunsch eingetragen.",
+                    student.row_number,
+                    "Freund 1/Freund 2",
+                    None,
+                )
+            )
     return messages
 
 
