@@ -81,19 +81,19 @@ class OptimizationSettings:
     enforce_music_profile: bool = False
     enforce_language_profile: bool = False
 
-    weight_music_profile: int = 800
-    weight_language_profile: int = 800
-    weight_mixed_language_class: int = 50000
-    weight_mixed_music_class: int = 50000
-    weight_friend1: int = 1000
-    weight_friend2: int = 300
-    weight_mutual_friend: int = 2500
-    weight_support_distribution: int = 250
+    weight_music_profile: int = 15000
+    weight_language_profile: int = 15000
+    weight_mixed_language_class: int = 1500
+    weight_mixed_music_class: int = 1500
+    weight_friend1: int = 1800
+    weight_friend2: int = 600
+    weight_mutual_friend: int = 4500
+    weight_support_distribution: int = 300
     weight_gender_balance: int = 80
-    weight_primary_school: int = 50
+    weight_primary_school: int = 60
     weight_primary_class: int = 40
-    weight_nationality: int = 10
-    weight_religion: int = 5
+    weight_nationality: int = 5
+    weight_religion: int = 0
     weight_keep_existing: int = 0
 
     solver_time_limit_seconds: int = 30

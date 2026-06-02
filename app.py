@@ -8,6 +8,7 @@ from time import perf_counter
 import pandas as pd
 import streamlit as st
 
+from klassenbildung.core.constants import DEFAULT_WEIGHTS
 from klassenbildung.core.models import ClassConfig, OptimizationSettings, Student, ValidationMessage
 from klassenbildung.core.settings import (
     coerce_settings,
@@ -35,6 +36,70 @@ st.set_page_config(page_title="Klassenbildung", layout="wide")
 
 DUMMY_EXCEL_PATH = Path("Dummy_Klassenbildung_FakeDaten.xlsx")
 COMMENT_REVIEW_MESSAGE = "Bemerkung muss manuell geprüft werden."
+
+WEIGHT_HELP = {
+    "weight_language_profile": (
+        "Sehr wichtig: Ein Schüler mit Französisch/Latein-Wunsch soll in eine Klasse passen, "
+        "die diese Sprache anbietet. Hoch lassen, damit Sprachwünsche praktisch immer erfüllt werden."
+    ),
+    "weight_music_profile": (
+        "Sehr wichtig: Musikwünsche wie Bläser, Streicher, Gesang oder Regulär sollen zur Klasse passen. "
+        "Hoch lassen, damit der Solver lieber Mischklassen bildet als Musikwünsche zu verletzen."
+    ),
+    "weight_mutual_friend": (
+        "Zusatzgewicht, wenn zwei Schüler sich gegenseitig nennen. Das kommt zusätzlich zu den normalen "
+        "Freundeswunsch-Gewichten und ist deshalb stärker als ein einseitiger Wunsch."
+    ),
+    "weight_friend1": (
+        "Gewicht für den ersten Freundeswunsch. Höher bedeutet: Der Solver trennt Freund 1 nur, "
+        "wenn andere wichtige Ziele dagegen sprechen."
+    ),
+    "weight_friend2": (
+        "Gewicht für den zweiten Freundeswunsch. Niedriger als Freund 1, weil der erste Wunsch wichtiger zählt."
+    ),
+    "weight_mixed_language_class": (
+        "Strafe pro Klasse, in der Französisch und Latein gemischt werden. Das verhindert unnötige Mischklassen, "
+        "ist aber niedriger als die Strafe für verletzte Sprachwünsche."
+    ),
+    "weight_mixed_music_class": (
+        "Strafe pro Klasse, in der mehrere Musikprofile wie Bläser, Streicher und Gesang gemischt werden. "
+        "Das reduziert Mischklassen, ohne Musik-/Sprachwünsche zu brechen."
+    ),
+    "weight_support_distribution": (
+        "Verteilt R-/Unterstützungsmarkierungen gleichmäßiger auf die Klassen. Höher bedeutet weniger Ballung."
+    ),
+    "weight_gender_balance": (
+        "Versucht m/w ungefähr gleichmäßig zu verteilen. Sollte niedriger bleiben als Freundes- und Profilwünsche."
+    ),
+    "weight_primary_school": (
+        "Verhindert zu starke Ballungen aus derselben abgebenden Grundschule. Es ist keine Trennungsregel."
+    ),
+    "weight_primary_class": (
+        "Verhindert zu starke Ballungen aus derselben alten Grundschulklasse. Niedriger als Freundeswünsche halten."
+    ),
+    "weight_nationality": (
+        "Sehr schwache Verteilung nach Staat/Nationalität. In der Regel niedrig halten oder auf 0 setzen."
+    ),
+    "weight_religion": (
+        "Sehr schwache Verteilung nach Religion. Standard ist 0, weil sie normalerweise keine Klassenentscheidung treiben soll."
+    ),
+}
+PREVIOUS_DEFAULT_WEIGHTS = {
+    "weight_music_profile": 800,
+    "weight_language_profile": 800,
+    "weight_mixed_language_class": 50000,
+    "weight_mixed_music_class": 50000,
+    "weight_friend1": 1000,
+    "weight_friend2": 300,
+    "weight_mutual_friend": 2500,
+    "weight_support_distribution": 250,
+    "weight_gender_balance": 80,
+    "weight_primary_school": 50,
+    "weight_primary_class": 40,
+    "weight_nationality": 10,
+    "weight_religion": 5,
+    "weight_keep_existing": 0,
+}
 
 
 def main() -> None:
@@ -80,8 +145,15 @@ def _init_state() -> None:
 
 def _current_settings() -> OptimizationSettings:
     current: OptimizationSettings = coerce_settings(st.session_state.settings)
+    current = _migrate_previous_default_weights(current)
     st.session_state.settings = current
     return current
+
+
+def _migrate_previous_default_weights(settings: OptimizationSettings) -> OptimizationSettings:
+    if all(getattr(settings, key) == value for key, value in PREVIOUS_DEFAULT_WEIGHTS.items()):
+        return replace(settings, **DEFAULT_WEIGHTS)
+    return settings
 
 
 def _settings_tab() -> None:
@@ -128,43 +200,66 @@ def _settings_tab() -> None:
     st.dataframe(_class_size_preview_frame(preview_configs), width="stretch", hide_index=True)
 
     st.subheader("Gewichtungen")
-    weight_language_profile = st.slider(
-        "Sprachwunsch passend zur Klasse",
-        0,
-        5000,
+    st.caption("Große Zahl = wichtiger. 0 bedeutet: dieses Kriterium wird ignoriert.")
+    if st.button("Empfohlene Gewichtungen laden", key="settings_reset_weights"):
+        current = replace(current, **DEFAULT_WEIGHTS)
+        save_settings(current)
+        st.session_state.settings = current
+        st.session_state.solver_result = None
+        st.rerun()
+
+    st.markdown("**Wünsche erfüllen**")
+    weight_language_profile = _weight_slider(
+        "Sprachwunsch erfüllen",
+        "weight_language_profile",
         current.weight_language_profile,
-        step=100,
+        max_value=25000,
+        step=500,
     )
-    weight_music_profile = st.slider(
-        "Musikwunsch passend zur Klasse",
-        0,
-        5000,
+    weight_music_profile = _weight_slider(
+        "Musikwunsch erfüllen",
+        "weight_music_profile",
         current.weight_music_profile,
-        step=100,
+        max_value=25000,
+        step=500,
     )
-    weight_mixed_language_class = st.slider(
-        "F/L-Mischklassen vermeiden",
-        0,
-        100000,
-        current.weight_mixed_language_class,
-        step=1000,
-    )
-    weight_mixed_music_class = st.slider(
-        "Musik-Mischklassen vermeiden",
-        0,
-        100000,
-        current.weight_mixed_music_class,
-        step=1000,
-    )
-    weight_mutual_friend = st.slider(
-        "Gegenseitige Freunde",
-        0,
-        5000,
+    weight_mutual_friend = _weight_slider(
+        "Gegenseitige Freunde zusammenhalten",
+        "weight_mutual_friend",
         current.weight_mutual_friend,
+        max_value=10000,
+        step=250,
+    )
+    weight_friend1 = _weight_slider(
+        "Freundeswunsch 1 erfüllen",
+        "weight_friend1",
+        current.weight_friend1,
+        max_value=5000,
         step=100,
     )
-    weight_friend1 = st.slider("Freundeswunsch 1", 0, 3000, current.weight_friend1, step=50)
-    weight_friend2 = st.slider("Freundeswunsch 2", 0, 1500, current.weight_friend2, step=50)
+    weight_friend2 = _weight_slider(
+        "Freundeswunsch 2 erfüllen",
+        "weight_friend2",
+        current.weight_friend2,
+        max_value=3000,
+        step=50,
+    )
+
+    st.markdown("**Mischklassen vermeiden**")
+    weight_mixed_language_class = _weight_slider(
+        "F/L-Mischklassen vermeiden",
+        "weight_mixed_language_class",
+        current.weight_mixed_language_class,
+        max_value=10000,
+        step=250,
+    )
+    weight_mixed_music_class = _weight_slider(
+        "Musik-Mischklassen vermeiden",
+        "weight_mixed_music_class",
+        current.weight_mixed_music_class,
+        max_value=10000,
+        step=250,
+    )
 
     advanced = _advanced_weight_values(current)
     with st.expander("Weitere Gewichtungen", expanded=False):
@@ -208,14 +303,68 @@ def _advanced_weight_values(current: OptimizationSettings) -> dict[str, int]:
 
 def _advanced_weight_controls(current: OptimizationSettings) -> dict[str, int]:
     return {
-        "weight_support_distribution": st.slider("R-Verteilung", 0, 1000, current.weight_support_distribution, step=25),
-        "weight_gender_balance": st.slider("Geschlecht", 0, 500, current.weight_gender_balance, step=10),
-        "weight_primary_school": st.slider("Grundschule", 0, 500, current.weight_primary_school, step=10),
-        "weight_primary_class": st.slider("Grundschulklasse", 0, 500, current.weight_primary_class, step=10),
-        "weight_nationality": st.slider("Staat/Nationalität", 0, 200, current.weight_nationality, step=5),
-        "weight_religion": st.slider("Religion", 0, 200, current.weight_religion, step=5),
+        "weight_support_distribution": _weight_slider(
+            "R-Verteilung",
+            "weight_support_distribution",
+            current.weight_support_distribution,
+            max_value=2000,
+            step=50,
+        ),
+        "weight_gender_balance": _weight_slider(
+            "Geschlecht",
+            "weight_gender_balance",
+            current.weight_gender_balance,
+            max_value=500,
+            step=10,
+        ),
+        "weight_primary_school": _weight_slider(
+            "Grundschule",
+            "weight_primary_school",
+            current.weight_primary_school,
+            max_value=500,
+            step=10,
+        ),
+        "weight_primary_class": _weight_slider(
+            "Grundschulklasse",
+            "weight_primary_class",
+            current.weight_primary_class,
+            max_value=500,
+            step=10,
+        ),
+        "weight_nationality": _weight_slider(
+            "Staat/Nationalität",
+            "weight_nationality",
+            current.weight_nationality,
+            max_value=100,
+            step=5,
+        ),
+        "weight_religion": _weight_slider(
+            "Religion",
+            "weight_religion",
+            current.weight_religion,
+            max_value=100,
+            step=5,
+        ),
         "weight_keep_existing": 0,
     }
+
+
+def _weight_slider(
+    label: str,
+    key: str,
+    value: int,
+    *,
+    max_value: int,
+    step: int,
+) -> int:
+    return st.slider(
+        label,
+        min_value=0,
+        max_value=max_value,
+        value=min(max(value, 0), max_value),
+        step=step,
+        help=WEIGHT_HELP[key],
+    )
 
 
 def _without_generated_labels(class_configs: list[ClassConfig]) -> list[ClassConfig]:
