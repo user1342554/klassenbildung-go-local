@@ -90,13 +90,26 @@ def _settings_tab() -> None:
     total_students = len(result.students) if result else 210
     class_configs: list[ClassConfig] = st.session_state.class_configs
     col1, col2, col3, col4 = st.columns(4)
-    class_count = col1.number_input("Anzahl Klassen", min_value=1, max_value=15, value=len(class_configs) or 7)
-    year = col2.number_input("Jahrgang", min_value=1, max_value=13, value=5)
-    max_size = col3.number_input("Max. Klassengröße", min_value=1, max_value=40, value=30)
+    class_count = col1.number_input(
+        "Anzahl Klassen",
+        min_value=1,
+        max_value=15,
+        value=len(class_configs) or 7,
+        key="settings_class_count",
+    )
+    year = col2.number_input("Jahrgang", min_value=1, max_value=13, value=5, key="settings_year")
+    max_size = col3.number_input(
+        "Max. Klassengröße",
+        min_value=1,
+        max_value=40,
+        value=30,
+        key="settings_max_size",
+    )
     time_limit = col4.select_slider(
         "Max. Rechenzeit",
         options=[10, 30, 60, 120],
         value=current.solver_time_limit_seconds,
+        key="settings_time_limit",
     )
     st.caption(
         "Der Solver sucht nach gültigen Lösungen und versucht zu beweisen, dass keine bessere existiert. "
@@ -104,7 +117,7 @@ def _settings_tab() -> None:
         "FEASIBLE ist ein gültiges, aber nicht bewiesen bestes Ergebnis."
     )
 
-    if st.button("Klassen aus Schülerzahl erzeugen"):
+    if st.button("Klassen aus Schülerzahl erzeugen", key="settings_generate_classes"):
         st.session_state.class_configs = generate_class_configs(
             total_students=total_students,
             class_count=int(class_count),
@@ -296,11 +309,23 @@ def _class_config_tab() -> None:
 
     with st.expander("Klassen bearbeiten", expanded=False):
         col1, col2, col3 = st.columns(3)
-        class_count = col1.number_input("Anzahl Klassen", min_value=1, max_value=15, value=len(class_configs) or 7)
-        year = col2.number_input("Jahrgang", min_value=1, max_value=13, value=5)
-        max_size = col3.number_input("Maximale Klassengröße", min_value=1, max_value=40, value=30)
+        class_count = col1.number_input(
+            "Anzahl Klassen",
+            min_value=1,
+            max_value=15,
+            value=len(class_configs) or 7,
+            key="details_class_count",
+        )
+        year = col2.number_input("Jahrgang", min_value=1, max_value=13, value=5, key="details_year")
+        max_size = col3.number_input(
+            "Maximale Klassengröße",
+            min_value=1,
+            max_value=40,
+            value=30,
+            key="details_max_size",
+        )
 
-        if st.button("Klassen aus Schülerzahl erzeugen"):
+        if st.button("Klassen aus Schülerzahl erzeugen", key="details_generate_classes"):
             st.session_state.class_configs = generate_class_configs(
                 total_students=total_students,
                 class_count=int(class_count),
@@ -339,7 +364,7 @@ def _class_config_tab() -> None:
                     )
                 )
 
-        if st.button("Klassen speichern"):
+        if st.button("Klassen speichern", key="details_save_classes"):
             save_class_configs(edited_configs)
             st.session_state.class_configs = edited_configs
             st.success("Klassen gespeichert.")
