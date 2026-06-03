@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, Student
 from klassenbildung.optimization.scoring import score_solution
+from klassenbildung.presentation.reoptimization_view import reoptimization_action_hints, reoptimization_visible_text
 from klassenbildung.presentation.result_view_model import CandidateRole, CandidateSource, CandidateSummary
 from klassenbildung.services.assignment_draft import ManualMove, apply_move, create_assignment_draft
 from klassenbildung.services.reoptimization import (
@@ -164,6 +165,75 @@ def test_reoptimization_blocked_state_disables_run_button() -> None:
     score = score_solution(students, invalid_draft.current_assignments, settings, classes, invalid_draft.manual_rules)
 
     assert draft_reoptimization_state(invalid_draft, score) == ReoptimizationFlowState.DRAFT_HAS_CONFLICTS
+
+
+def test_reoptimization_blocked_fixation_conflict_keeps_solver_run_disabled() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(
+        summary,
+        manual_rules=[
+            ManualRule("TOGETHER", "s1", "s3"),
+            ManualRule("FIX_CLASS", "s1", class_id="5a"),
+            ManualRule("FIX_CLASS", "s3", class_id="5b"),
+        ],
+    )
+    score = score_solution(students, draft.current_assignments, settings, classes, draft.manual_rules)
+
+    assert any("Zusammen-Regel verletzt" in violation for violation in score.hard_violations)
+    assert draft_reoptimization_state(draft, score) == ReoptimizationFlowState.DRAFT_HAS_CONFLICTS
+
+
+def test_reoptimization_real_infeasible_keeps_manual_state_and_actionable_text() -> None:
+    students = [_student(1, "F", "B"), _student(2, "L", "S")]
+    classes = [
+        ClassConfig("5a", "5a", 0, 1, [], []),
+        ClassConfig("5b", "5b", 0, 1, [], []),
+    ]
+    assignments = {"s1": "5a", "s2": "5b"}
+    settings = OptimizationSettings(solver_time_limit_seconds=2)
+    score = score_solution(students, assignments, settings, classes)
+    summary = _summary(assignments, score, len(students))
+    draft = create_assignment_draft(summary, manual_rules=[ManualRule("FIX_CLASS", "s1", class_id="5a")])
+    fixed_draft = apply_move(
+        draft,
+        ManualMove("s2", "5b", "5a", lock_after_move=True, reason="absichtlich widersprüchlich"),
+        students=students,
+        class_configs=classes,
+    )
+    before_assignments = dict(fixed_draft.current_assignments)
+
+    report = reoptimize_with_manual_fixations(fixed_draft, students, classes, settings)
+    visible_text = reoptimization_visible_text(report)
+
+    assert report.flow_state == ReoptimizationFlowState.REOPTIMIZATION_INFEASIBLE
+    assert not report.succeeded
+    assert fixed_draft.current_assignments == before_assignments
+    assert report.manual_moves == fixed_draft.moves
+    assert ManualRule("FIX_CLASS", "s1", class_id="5a") in report.applied_rules
+    assert ManualRule("FIX_CLASS", "s2", class_id="5a") in report.applied_rules
+    assert "bisherige Entwurf bleibt erhalten" in visible_text
+    assert "Fixierungen" in " ".join(reoptimization_action_hints(report.flow_state))
+
+
+def test_reoptimization_failed_reports_keep_moves_rules_and_user_safe_copy() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary, manual_rules=[ManualRule("SEPARATE", "s1", "s3")])
+    moved = apply_move(
+        draft,
+        ManualMove("s2", "5a", "5b", lock_after_move=True, reason="Testfixierung"),
+        students=students,
+        class_configs=classes,
+    )
+
+    report = _failed_report("UNKNOWN", moved, students, classes, settings)
+    visible_text = reoptimization_visible_text(report)
+
+    assert report.flow_state == ReoptimizationFlowState.REOPTIMIZATION_UNKNOWN
+    assert report.manual_moves == moved.moves
+    assert ManualRule("SEPARATE", "s1", "s3") in report.applied_rules
+    assert ManualRule("FIX_CLASS", "s2", class_id="5b") in report.applied_rules
+    assert "Keine entscheidbare neue Lösung gefunden" in visible_text
+    assert "UNKNOWN" not in visible_text
 
 
 def _failed_report(status: str, draft, students, classes, settings) -> ReoptimizationReport:
