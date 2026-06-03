@@ -79,6 +79,8 @@ def _reload_stale_project_modules() -> None:
     stale_reoptimization = not hasattr(reoptimization_module, "reoptimize_with_manual_fixations")
     stale_review = (
         not hasattr(candidate_review_module, "build_candidate_review_model")
+        or "note_review_status_by_student"
+        not in inspect.signature(candidate_review_module.build_candidate_review_model).parameters
         or not hasattr(candidate_review_module, "candidate_review_records")
         or not hasattr(candidate_review_module, "ReviewReadiness")
         or not hasattr(candidate_review_module, "review_readiness_text")
