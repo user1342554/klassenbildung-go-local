@@ -9,6 +9,7 @@ from klassenbildung.core.settings import load_settings
 from klassenbildung.excel_io.excel_export import export_excel
 from klassenbildung.excel_io.excel_import import import_excel
 from klassenbildung.optimization.scoring import score_solution
+from klassenbildung.presentation.candidate_summary import CANDIDATE_SUMMARY_FIELDS
 
 
 def test_export_updates_basis_and_creates_class_sheets(sample_workbook_bytes: bytes) -> None:
@@ -204,6 +205,56 @@ def test_standard_export_omits_expert_solver_diagnostics() -> None:
     assert "Best Bound" not in values
     assert "Profil-Slack-Vergleich" not in values
     assert "Kandidaten-Details" in workbook.sheetnames
+
+
+def test_standard_export_uses_candidate_summaries_not_slack_candidates() -> None:
+    students = [_student(1, "F", "B"), _student(2, "L", "S")]
+    class_configs = [
+        ClassConfig("5a", "5a", 0, 2, [], []),
+        ClassConfig("5b", "5b", 0, 2, [], []),
+    ]
+    assignments = {"s1": "5a", "s2": "5b"}
+    score = score_solution(students, assignments, load_settings(), class_configs)
+    candidate = ProfileSlackReport(
+        variant="E beide +1",
+        language_mixed_limit=2,
+        music_mixed_limit=2,
+        status="FEASIBLE",
+        isolated_friend_request_count=score.isolated_friend_request_count,
+        friend1_fulfilled=score.friend1_fulfilled,
+        friend1_total=score.friend1_total,
+        friend2_fulfilled=score.friend2_fulfilled,
+        friend2_total=score.friend2_total,
+        mutual_friend_fulfilled=score.mutual_friend_fulfilled,
+        mutual_friend_total=score.mutual_friend_total,
+        review_candidate=True,
+        social_limit_met=True,
+        assignments=assignments,
+    )
+
+    exported = export_excel(
+        None,
+        students,
+        assignments,
+        class_configs,
+        score,
+        [],
+        profile_slack_reports=[candidate],
+    )
+    workbook = load_workbook(io.BytesIO(exported))
+    exported_text = {
+        cell
+        for sheet in workbook.worksheets
+        for row in sheet.iter_rows(values_only=True)
+        for cell in row
+        if isinstance(cell, str)
+    }
+
+    assert "Kandidaten" in workbook.sheetnames
+    assert [cell.value for cell in workbook["Kandidaten"][1]] == CANDIDATE_SUMMARY_FIELDS
+    assert "slack_candidates" not in exported_text
+    assert "primary_recommendation" not in exported_text
+    assert "balanced_recommendation" not in exported_text
 
 
 def _student(

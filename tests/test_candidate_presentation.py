@@ -118,6 +118,34 @@ def test_candidate_summary_is_single_source_for_ui_json_export() -> None:
 
 
 def test_debug_payload_uses_explicit_candidate_roles() -> None:
+    payload = _debug_payload()
+
+    assert payload["default_review_candidate"] == "E beide +1"
+    assert payload["social_strongest_candidate"] == "F mehr Profil-Slack"
+    assert payload["fl_preserving_candidate"] == "C Musik +2"
+    assert "candidate_summaries" in payload
+    assert "candidate_reviews" in payload
+
+
+def test_debug_payload_does_not_emit_primary_recommendation() -> None:
+    payload = _debug_payload()
+
+    assert "primary_recommendation" not in payload
+
+
+def test_debug_payload_does_not_emit_balanced_recommendation() -> None:
+    payload = _debug_payload()
+
+    assert "balanced_recommendation" not in payload
+
+
+def test_debug_payload_does_not_emit_slack_candidates() -> None:
+    payload = _debug_payload()
+
+    assert "slack_candidates" not in payload
+
+
+def _debug_payload() -> dict[str, object]:
     import app
 
     solver_result = SolverResult(
@@ -131,13 +159,7 @@ def test_debug_payload_uses_explicit_candidate_roles() -> None:
     )
     score = type("Score", (), {"total_score": 0, "hard_violations": [], "isolated_friend_request_count": 0})()
 
-    payload = app._solver_debug_payload(solver_result, [], [], OptimizationSettings(), score)
-
-    assert "primary_recommendation" not in payload
-    assert "balanced_recommendation" not in payload
-    assert payload["default_review_candidate"] == "E beide +1"
-    assert payload["social_strongest_candidate"] == "F mehr Profil-Slack"
-    assert payload["fl_preserving_candidate"] == "C Musik +2"
+    return app._solver_debug_payload(solver_result, [], [], OptimizationSettings(), score)
 
 
 def test_standard_mode_hides_solver_jargon() -> None:
