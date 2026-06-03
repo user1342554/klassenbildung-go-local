@@ -18,6 +18,7 @@ import klassenbildung.presentation.candidate_summary as candidate_summary_module
 import klassenbildung.services.assignment_draft as assignment_draft_module
 import klassenbildung.services.manual_rules as manual_rules_module
 import klassenbildung.services.note_rule_conversion as note_rule_conversion_module
+import klassenbildung.services.reoptimization as reoptimization_module
 from klassenbildung.core.constants import DEFAULT_WEIGHTS
 from klassenbildung.core.models import (
     ClassConfig,
@@ -66,7 +67,7 @@ def _reload_stale_project_modules() -> None:
     global save_class_configs, save_settings
     global export_excel
     global candidate_review_module, candidate_summary_module
-    global assignment_draft_module, manual_rules_module, note_rule_conversion_module
+    global assignment_draft_module, manual_rules_module, note_rule_conversion_module, reoptimization_module
 
     stale_core = "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
     stale_summary = not hasattr(candidate_summary_module, "candidate_summary_records")
@@ -74,6 +75,7 @@ def _reload_stale_project_modules() -> None:
         not hasattr(assignment_draft_module, "build_candidate_review_for_draft")
         or not hasattr(assignment_draft_module, "move_delta_rows")
     )
+    stale_reoptimization = not hasattr(reoptimization_module, "reoptimize_with_manual_fixations")
     stale_review = (
         not hasattr(candidate_review_module, "build_candidate_review_model")
         or not hasattr(candidate_review_module, "candidate_review_records")
@@ -85,7 +87,7 @@ def _reload_stale_project_modules() -> None:
         or "base_candidate_name" not in inspect.signature(export_excel).parameters
         or not hasattr(excel_export_module, "_write_candidate_summary_sheet")
     )
-    if not stale_core and not stale_summary and not stale_review and not stale_export and not stale_draft:
+    if not stale_core and not stale_summary and not stale_review and not stale_export and not stale_draft and not stale_reoptimization:
         return
 
     if stale_core:
@@ -106,6 +108,7 @@ def _reload_stale_project_modules() -> None:
         assignment_draft_module = importlib.reload(assignment_draft_module)
         manual_rules_module = importlib.reload(manual_rules_module)
         note_rule_conversion_module = importlib.reload(note_rule_conversion_module)
+        reoptimization_module = importlib.reload(reoptimization_module)
 
     if stale_summary:
         candidate_summary_module = importlib.reload(candidate_summary_module)
@@ -115,6 +118,9 @@ def _reload_stale_project_modules() -> None:
 
     if stale_draft:
         assignment_draft_module = importlib.reload(assignment_draft_module)
+
+    if stale_reoptimization:
+        reoptimization_module = importlib.reload(reoptimization_module)
 
     if stale_export or stale_summary or stale_review:
         export_excel = importlib.reload(excel_export_module).export_excel
@@ -298,6 +304,7 @@ def _init_state() -> None:
     st.session_state.setdefault("editor_draft", None)
     st.session_state.setdefault("editor_base_candidate_key", None)
     st.session_state.setdefault("editor_move_impacts", [])
+    st.session_state.setdefault("last_reoptimization_report", None)
 
 
 def _set_import_result(result) -> None:
@@ -307,6 +314,7 @@ def _set_import_result(result) -> None:
     st.session_state.validation_result = None
     st.session_state.solver_result = None
     _clear_editor_state()
+    _clear_reoptimization_state()
     if old_hash and old_hash != new_hash:
         _clear_manual_rule_state()
         st.session_state.manual_rule_reset_message = (
@@ -320,12 +328,17 @@ def _clear_manual_rule_state() -> None:
     st.session_state.manual_rule_entries = []
     st.session_state.note_hints_kept = set()
     _clear_editor_state()
+    _clear_reoptimization_state()
 
 
 def _clear_editor_state() -> None:
     st.session_state.editor_draft = None
     st.session_state.editor_base_candidate_key = None
     st.session_state.editor_move_impacts = []
+
+
+def _clear_reoptimization_state() -> None:
+    st.session_state.last_reoptimization_report = None
 
 
 def _manual_rules() -> list[ManualRule]:
@@ -380,6 +393,7 @@ def _store_manual_rule(
     st.session_state.manual_rules = manual_rules_module.active_manual_rules(entries)
     st.session_state.solver_result = None
     _clear_editor_state()
+    _clear_reoptimization_state()
     return changed, []
 
 
@@ -511,6 +525,7 @@ def _settings_tab() -> None:
         st.session_state.settings = current
         st.session_state.solver_result = None
         _clear_editor_state()
+        _clear_reoptimization_state()
         st.rerun()
 
     st.markdown("**Sprache und Musik**")
@@ -612,6 +627,7 @@ def _settings_tab() -> None:
         st.session_state.class_configs = preview_configs
         st.session_state.solver_result = None
         _clear_editor_state()
+        _clear_reoptimization_state()
         st.success("Einstellungen übernommen.")
         st.rerun()
 
@@ -866,12 +882,14 @@ def _render_manual_rules_panel(
         st.session_state.manual_rules = _manual_rules()
         st.session_state.solver_result = None
         _clear_editor_state()
+        _clear_reoptimization_state()
         st.rerun()
     if action_col_b.button("Löschen", key=f"manual_rule_delete_{key_suffix}"):
         st.session_state.manual_rule_entries = manual_rules_module.delete_manual_rule_entry(entries, selected_entry.id)
         st.session_state.manual_rules = _manual_rules()
         st.session_state.solver_result = None
         _clear_editor_state()
+        _clear_reoptimization_state()
         st.rerun()
     if st.button("Regeln zurücksetzen", key=f"manual_rule_clear_{key_suffix}"):
         _clear_manual_rule_state()
@@ -891,6 +909,7 @@ def _render_manual_rules_panel(
                 st.session_state.manual_rules = _manual_rules()
                 st.session_state.solver_result = None
                 _clear_editor_state()
+                _clear_reoptimization_state()
                 st.success("Regel gespeichert. Bitte danach neu optimieren.")
                 st.rerun()
 
@@ -988,6 +1007,7 @@ def _class_config_tab() -> None:
             st.session_state.class_configs = edited_configs
             st.session_state.solver_result = None
             _clear_editor_state()
+            _clear_reoptimization_state()
             st.success("Klassen gespeichert.")
 
 
@@ -1019,9 +1039,10 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
                 st.session_state.class_configs,
                 settings,
                 manual_rules=_manual_rules(),
-            )
+        )
         st.session_state.solver_result = solver_result
         _clear_editor_state()
+        _clear_reoptimization_state()
         elapsed = perf_counter() - started_at
         if solver_result.status in {"OPTIMAL", "FEASIBLE"}:
             verdict = _quality_verdict(solver_result, len(result.students))
@@ -1091,6 +1112,7 @@ def _result_tab(settings: OptimizationSettings) -> None:
         include_review=True,
         key_suffix="ergebnis",
     )
+    _render_reoptimization_report(st.session_state.get("last_reoptimization_report"))
 
     export_draft = st.session_state.get("editor_draft")
     export_assignments = solver_result.assignments
@@ -1298,6 +1320,8 @@ def _editor_tab(settings: OptimizationSettings) -> None:
         st.error("Der aktuelle Entwurf enthält harte Regelverletzungen.")
         st.dataframe(pd.DataFrame({"Blocker": score.hard_violations}), width="stretch", hide_index=True)
 
+    _render_reoptimization_report(st.session_state.get("last_reoptimization_report"))
+
     class_ids = [config.class_id for config in st.session_state.class_configs]
     if result.students:
         st.session_state.setdefault("editor_selected_student", result.students[0].internal_id)
@@ -1477,6 +1501,8 @@ def _editor_tab(settings: OptimizationSettings) -> None:
             st.success(f"{selected.display_label} wurde nach {target_class} verschoben und im manuellen Entwurf fixiert.")
             st.rerun()
 
+        _render_reoptimization_controls(draft, result.students, st.session_state.class_configs, settings)
+
 
 def _editor_candidate_label(key: str, summaries: list) -> str:
     for summary in summaries:
@@ -1553,6 +1579,65 @@ def _render_editor_note_status_summary(students: list[Student]) -> None:
         },
     ]
     st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+
+def _render_reoptimization_controls(
+    draft,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+) -> None:
+    locked_moves = [move for move in draft.moves if move.lock_after_move]
+    st.markdown("**Neu optimieren mit manuellen Fixierungen**")
+    if not locked_moves:
+        st.info("Neuoptimierung ist möglich, sobald mindestens eine Änderung mit 'Übernehmen und fixieren' übernommen wurde.")
+        return
+    st.caption(
+        "Diese Draft-Fixierungen werden als harte Regeln übernommen. "
+        "Der Solver darf alle anderen Schüler neu verteilen; aktive manuelle Regeln bleiben gültig."
+    )
+    confirm = st.checkbox(
+        "Fixierungen als harte Solverregeln übernehmen und alle anderen Schüler neu optimieren.",
+        key="editor_reoptimize_confirm",
+    )
+    if st.button("Fixierungen übernehmen und neu optimieren", disabled=not confirm, key="editor_reoptimize_with_fixes"):
+        report = reoptimization_module.reoptimize_with_manual_fixations(draft, students, class_configs, settings)
+        if not report.succeeded:
+            st.session_state.last_reoptimization_report = report
+            st.error(f"Neuoptimierung nicht erfolgreich: {report.solver_result.status}")
+            st.rerun()
+        _promote_draft_fixations_to_manual_rules(draft)
+        st.session_state.solver_result = report.solver_result
+        _clear_editor_state()
+        st.session_state.last_reoptimization_report = report
+        st.success("Neuoptimierung mit Fixierungen abgeschlossen.")
+        st.rerun()
+
+
+def _render_reoptimization_report(report) -> None:
+    if not report:
+        return
+    st.markdown("**Vergleich nach Neuoptimierung**")
+    if report.succeeded:
+        st.success(
+            f"Neu optimiert: {report.changed_student_count} Schüler gegenüber dem manuellen Entwurf verändert, "
+            f"{len(report.fixed_student_ids)} Fixierungen übernommen."
+        )
+    else:
+        st.error(f"Neuoptimierung nicht erfolgreich: {report.solver_result.status}")
+    st.dataframe(
+        pd.DataFrame(reoptimization_module.reoptimization_comparison_rows(report)),
+        width="stretch",
+        hide_index=True,
+    )
+
+
+def _promote_draft_fixations_to_manual_rules(draft) -> None:
+    entries = _manual_rule_entries()
+    for rule in reoptimization_module.draft_fixation_rules(draft):
+        entries, _changed = manual_rules_module.add_manual_rule_entry(entries, rule, source="manual")
+    st.session_state.manual_rule_entries = entries
+    st.session_state.manual_rules = manual_rules_module.active_manual_rules(entries)
 
 
 def _move_impact_frame(impact) -> pd.DataFrame:
