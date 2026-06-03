@@ -149,6 +149,12 @@ class CandidateReviewModel:
         return "\n".join(parts)
 
 
+@dataclass(frozen=True)
+class ReviewCandidateGroups:
+    reviewable: list[CandidateReviewModel]
+    blocked: list[CandidateReviewModel]
+
+
 def review_readiness_text(readiness: ReviewReadiness) -> str:
     return {
         ReviewReadiness.READY_FOR_REVIEW: "Bereit zur pädagogischen Prüfung",
@@ -163,6 +169,13 @@ def review_warning_count_text(review: CandidateReviewModel) -> str:
 
 def review_warning_messages(review: CandidateReviewModel, level: ReviewWarningLevel) -> list[str]:
     return [warning.message for warning in review.warnings if warning.level == level]
+
+
+def group_reviews_by_readiness(reviews: list[CandidateReviewModel]) -> ReviewCandidateGroups:
+    return ReviewCandidateGroups(
+        reviewable=[review for review in reviews if review.readiness != ReviewReadiness.BLOCKED],
+        blocked=[review for review in reviews if review.readiness == ReviewReadiness.BLOCKED],
+    )
 
 
 def build_candidate_review_model(

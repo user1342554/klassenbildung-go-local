@@ -1777,7 +1777,7 @@ def _render_standard_result(
         else:
             st.success(f"{verdict['label']}: {verdict['message']}")
 
-    _render_candidate_cards(solver_result, student_count, key_suffix)
+    _render_candidate_cards(solver_result, students, class_configs, settings, key_suffix)
 
     if include_review:
         _render_candidate_review(solver_result, students, class_configs, settings, key_suffix)
@@ -1795,33 +1795,70 @@ def _student_count_from_solver_result(solver_result) -> int:
     return max(assignment_counts, default=0)
 
 
-def _render_candidate_cards(solver_result, student_count: int, key_suffix: str) -> None:
+def _render_candidate_cards(
+    solver_result,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+    key_suffix: str,
+) -> None:
+    student_count = len(students)
     cards = summary_decision_candidate_cards(solver_result, student_count)
     if not cards:
         return
     st.markdown("**Prüfkandidaten**")
     summaries = candidate_summaries(solver_result, student_count)
-    cols = st.columns(min(len(cards), 3))
-    for col, (title, summary, caption) in zip(cols, cards):
-        with col.container(border=True):
-            st.markdown(f"**{title}**")
-            st.metric("Kinder ohne Wunschfreund", f"{summary.without_wishfriend}/{student_count}")
-            st.caption(
-                f"Freund 1: {_ratio_text(summary.friend1_satisfied, summary.friend1_total)} | "
-                f"gegenseitig: {_ratio_text(summary.mutual_satisfied, summary.mutual_total)}"
-            )
-            st.caption(
-                f"Profil: F/L {summary.fl_mixed_actual}, Musik {summary.music_mixed_actual}"
-            )
-            st.caption(summary_tradeoff_text(summary, summaries))
-            warnings = summary_warning_lines(summary)
-            if warnings:
-                st.warning(" ".join(warnings))
-            else:
-                st.info(caption)
-            if st.button("Kandidat prüfen", key=f"review_candidate_{key_suffix}_{summary.key}"):
-                st.session_state.review_candidate_variant = summary.key
-                st.rerun()
+    card_reviews = {
+        summary.key: candidate_review_module.build_candidate_review_model(summary, students, class_configs, settings)
+        for _, summary, _ in cards
+        if summary.assignments
+    }
+    visible_cards = [
+        (title, summary, caption, card_reviews.get(summary.key))
+        for title, summary, caption in cards
+        if card_reviews.get(summary.key) is None
+        or card_reviews[summary.key].readiness != candidate_review_module.ReviewReadiness.BLOCKED
+    ]
+    blocked_reviews = [
+        (title, card_reviews[summary.key])
+        for title, summary, _ in cards
+        if card_reviews.get(summary.key)
+        and card_reviews[summary.key].readiness == candidate_review_module.ReviewReadiness.BLOCKED
+    ]
+    if visible_cards:
+        cols = st.columns(min(len(visible_cards), 3))
+        for col, (title, summary, caption, review) in zip(cols, visible_cards):
+            with col.container(border=True):
+                st.markdown(f"**{title}**")
+                st.metric("Kinder ohne Wunschfreund", f"{summary.without_wishfriend}/{student_count}")
+                st.caption(
+                    f"Freund 1: {_ratio_text(summary.friend1_satisfied, summary.friend1_total)} | "
+                    f"gegenseitig: {_ratio_text(summary.mutual_satisfied, summary.mutual_total)}"
+                )
+                st.caption(
+                    f"Profil: F/L {summary.fl_mixed_actual}, Musik {summary.music_mixed_actual}"
+                )
+                st.caption(summary_tradeoff_text(summary, summaries))
+                warnings = summary_warning_lines(summary)
+                if warnings:
+                    st.warning(" ".join(warnings))
+                elif review and review.readiness == candidate_review_module.ReviewReadiness.NEEDS_ATTENTION:
+                    st.warning(candidate_review_module.review_readiness_text(review.readiness))
+                else:
+                    st.info(caption)
+                if st.button("Kandidat prüfen", key=f"review_candidate_{key_suffix}_{summary.key}"):
+                    st.session_state.review_candidate_variant = summary.key
+                    st.rerun()
+    if blocked_reviews:
+        with st.expander("Nicht verwendbare Varianten", expanded=False):
+            for title, review in blocked_reviews:
+                st.error(f"{title}: {candidate_review_module.review_readiness_text(review.readiness)}")
+                blocker_messages = candidate_review_module.review_warning_messages(
+                    review,
+                    candidate_review_module.ReviewWarningLevel.BLOCKER,
+                )
+                if blocker_messages:
+                    st.caption(" ".join(blocker_messages))
 
 
 def _render_candidate_review(

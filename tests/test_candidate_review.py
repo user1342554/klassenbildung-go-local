@@ -15,6 +15,7 @@ from klassenbildung.presentation.candidate_review import (
     build_candidate_review_model,
     build_candidate_review_models,
     candidate_review_records,
+    group_reviews_by_readiness,
     review_readiness_text,
     review_warning_messages,
 )
@@ -112,6 +113,16 @@ def test_candidate_review_with_hard_violation_is_blocked() -> None:
     assert review_warning_messages(review, ReviewWarningLevel.BLOCKER)
 
 
+def test_blocked_reviews_are_grouped_away_from_reviewable_candidates() -> None:
+    ready = _review_without_warning_but_unreliable_gap()
+    blocked = _blocked_review()
+
+    groups = group_reviews_by_readiness([ready, blocked])
+
+    assert groups.reviewable == [ready]
+    assert groups.blocked == [blocked]
+
+
 def test_review_readiness_texts_are_user_facing() -> None:
     assert review_readiness_text(ReviewReadiness.READY_FOR_REVIEW) == "Bereit zur pädagogischen Prüfung"
     assert review_readiness_text(ReviewReadiness.NEEDS_ATTENTION) == "Prüfen, enthält Warnungen"
@@ -188,6 +199,18 @@ def _review_without_warning_but_unreliable_gap():
     settings = OptimizationSettings()
     score = score_solution(students, assignments, settings, class_configs)
     candidate = _candidate_from_score("E beide +1", assignments, score, gap_reliable=False)
+    solver_result = SolverResult("FEASIBLE", assignments, profile_slack_reports=[candidate])
+    summary = review_candidates(solver_result, len(students))[0]
+    return build_candidate_review_model(summary, students, class_configs, settings)
+
+
+def _blocked_review():
+    students = [_student(1, "F", "B"), _student(2, "L", "S")]
+    class_configs = [ClassConfig("5a", "5a", 0, 1, [], [])]
+    assignments = {"s1": "5a", "s2": "5a"}
+    settings = OptimizationSettings()
+    score = score_solution(students, assignments, settings, class_configs)
+    candidate = _candidate_from_score("E beide +1", assignments, score)
     solver_result = SolverResult("FEASIBLE", assignments, profile_slack_reports=[candidate])
     summary = review_candidates(solver_result, len(students))[0]
     return build_candidate_review_model(summary, students, class_configs, settings)
