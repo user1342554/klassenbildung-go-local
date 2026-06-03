@@ -122,7 +122,8 @@ def test_full_manual_workflow_note_rule_solve_review_draft_export() -> None:
     assert workbook["Manuelle Regeln"]["A2"].value == "aktiv"
     assert workbook["Notizen"]["C2"].value == "in Regel umgewandelt"
     assert workbook["Manuelle Änderungen"]["F2"].value == "pädagogisch fixiert"
-    assert "Ohne Wunschfreund" in workbook["Manuelle Änderungen"]["G2"].value
+    assert workbook["Manuelle Änderungen"]["G1"].value == "Delta ohne Wunschfreund"
+    assert workbook["Übersicht"]["B3"].value == "ja"
 
 
 def _first_non_blocked_move(

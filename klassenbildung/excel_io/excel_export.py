@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import io as py_io
 
 from openpyxl import Workbook, load_workbook
@@ -7,6 +8,7 @@ from openpyxl.styles import Font
 
 import klassenbildung.presentation.candidate_review as candidate_review_module
 import klassenbildung.presentation.candidate_summary as candidate_summary_module
+import klassenbildung.services.assignment_draft as assignment_draft_module
 import klassenbildung.services.manual_rules as manual_rules_module
 from klassenbildung.core.constants import BASIS_SHEET_NAME, EXPORT_COLUMN_COUNT
 from klassenbildung.core.models import (
@@ -38,6 +40,7 @@ def export_excel(
     note_review_status_by_student: dict[str, object] | None = None,
     manual_moves: list | None = None,
     manual_move_impacts: list | None = None,
+    base_candidate_name: str | None = None,
 ) -> bytes:
     workbook = _load_or_create_workbook(source_workbook_bytes)
     basis = workbook[BASIS_SHEET_NAME]
@@ -47,7 +50,21 @@ def export_excel(
         if class_id:
             basis.cell(row=student.row_number, column=1).value = class_id
 
+    manual_rule_entries = manual_rule_entries or []
+    note_review_status_by_student = note_review_status_by_student or {}
+    manual_moves = manual_moves or []
+    manual_move_impacts = manual_move_impacts or []
+
     _replace_class_sheets(workbook, basis, students, assignments, class_configs)
+    _write_overview_sheet(
+        workbook,
+        students,
+        manual_rule_entries,
+        note_review_status_by_student,
+        manual_moves,
+        manual_move_impacts,
+        base_candidate_name,
+    )
     _write_score_sheet(
         workbook,
         score_report,
@@ -64,14 +81,64 @@ def export_excel(
         profile_slack_reports or [],
         settings or load_settings(),
     )
-    _write_manual_rules_sheet(workbook, manual_rule_entries or [], students)
-    _write_notes_sheet(workbook, students, assignments, manual_rule_entries or [], note_review_status_by_student or {})
-    _write_manual_changes_sheet(workbook, manual_moves or [], manual_move_impacts or [], students)
+    _write_manual_rules_sheet(workbook, manual_rule_entries, students)
+    _write_notes_sheet(workbook, students, assignments, manual_rule_entries, note_review_status_by_student)
+    _write_manual_changes_sheet(workbook, manual_moves, manual_move_impacts, students)
     _write_warning_sheet(workbook, validation_messages or [])
 
     output = py_io.BytesIO()
     workbook.save(output)
     return output.getvalue()
+
+
+def _write_overview_sheet(
+    workbook: Workbook,
+    students: list[Student],
+    manual_rule_entries: list,
+    note_review_status_by_student: dict[str, object],
+    manual_moves: list,
+    manual_move_impacts: list,
+    base_candidate_name: str | None,
+) -> None:
+    if "Übersicht" in workbook.sheetnames:
+        del workbook["Übersicht"]
+    sheet = workbook.create_sheet("Übersicht", 0)
+    sheet.append(["Feld", "Wert"])
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+
+    active_rules = sum(1 for entry in manual_rule_entries if getattr(entry, "active", False))
+    disabled_rules = sum(1 for entry in manual_rule_entries if not getattr(entry, "active", False))
+    note_students = [student for student in students if _student_has_manual_note(student)]
+    unreviewed_notes = sum(
+        1
+        for student in note_students
+        if _note_review_status_is(
+            note_review_status_by_student.get(student.internal_id, manual_rules_module.NoteReviewStatus.UNREVIEWED),
+            manual_rules_module.NoteReviewStatus.UNREVIEWED,
+        )
+    )
+    rows = [
+        ("Basis-Kandidat", base_candidate_name or _base_candidate_from_impacts(manual_move_impacts) or "-"),
+        ("Manuell verändert", "ja" if manual_moves else "nein"),
+        ("Anzahl manueller Moves", len(manual_moves)),
+        ("Anzahl Draft-Fixierungen", sum(1 for move in manual_moves if getattr(move, "lock_after_move", False))),
+        ("Anzahl aktiver Regeln", active_rules),
+        ("Anzahl deaktivierter Regeln", disabled_rules),
+        ("Anzahl ungeprüfter Notizen", unreviewed_notes),
+        ("Export-Zeitpunkt", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+    ]
+    for row in rows:
+        sheet.append(list(row))
+
+
+def _base_candidate_from_impacts(manual_move_impacts: list) -> str | None:
+    if not manual_move_impacts:
+        return None
+    summary = getattr(manual_move_impacts[0], "before_summary", None)
+    if not summary:
+        return None
+    return f"{summary.key}: {summary.name}"
 
 
 def _load_or_create_workbook(source_workbook_bytes: bytes | None) -> Workbook:
@@ -381,7 +448,7 @@ def _write_manual_rules_sheet(workbook: Workbook, manual_rule_entries: list, stu
     if not manual_rule_entries:
         return
     sheet = workbook.create_sheet("Manuelle Regeln")
-    headers = ["Status", "Typ", "Schüler", "Partner/Zielklasse", "Quelle", "Notizstatus", "Aktiv"]
+    headers = ["aktiv/deaktiviert", "Typ", "Schüler", "Partner/Zielklasse", "Quelle", "aus Notiz", "Notizstatus"]
     sheet.append(headers)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
@@ -394,8 +461,8 @@ def _write_manual_rules_sheet(workbook: Workbook, manual_rule_entries: list, stu
                 record["Schüler"],
                 record["Ziel / Partner"],
                 record["Quelle"],
+                "ja" if getattr(entry, "source", None) == "note" else "nein",
                 note_status,
-                "ja" if getattr(entry, "active", False) else "nein",
             ]
         )
 
@@ -441,13 +508,29 @@ def _write_manual_changes_sheet(workbook: Workbook, manual_moves: list, manual_m
     if not manual_moves:
         return
     sheet = workbook.create_sheet("Manuelle Änderungen")
-    headers = ["Schritt", "Schüler", "von Klasse", "nach Klasse", "fixiert", "Grund", "Auswirkung"]
+    headers = [
+        "Schritt",
+        "Schüler",
+        "von Klasse",
+        "nach Klasse",
+        "fixiert",
+        "Grund",
+        "Delta ohne Wunschfreund",
+        "Delta Freund 1",
+        "Delta gegenseitig",
+        "Delta Freund 2",
+        "Delta F/L-Minderheit",
+        "Delta Musik-Minderheit",
+        "Blocker",
+        "Warnungen",
+    ]
     sheet.append(headers)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
     impacts_by_index = {index: impact for index, impact in enumerate(manual_move_impacts, start=1)}
     for index, move in enumerate(manual_moves, start=1):
         impact = impacts_by_index.get(index)
+        deltas = _move_delta_values(impact)
         sheet.append(
             [
                 index,
@@ -456,7 +539,14 @@ def _write_manual_changes_sheet(workbook: Workbook, manual_moves: list, manual_m
                 move.to_class_id,
                 "ja" if move.lock_after_move else "nein",
                 move.reason or "",
-                _move_impact_text(impact),
+                deltas.get("without_wishfriend", ""),
+                deltas.get("friend1", ""),
+                deltas.get("mutual", ""),
+                deltas.get("friend2", ""),
+                deltas.get("fl_minority", ""),
+                deltas.get("music_minority", ""),
+                "; ".join(getattr(impact, "hard_violations", []) or []),
+                "; ".join(warning.message for warning in (getattr(impact, "warnings", []) or [])),
             ]
         )
 
@@ -602,22 +692,23 @@ def _note_review_status_text(status: object) -> str:
     return "ungeprüft"
 
 
-def _move_impact_text(impact) -> str:
+def _note_review_status_is(status: object, expected: manual_rules_module.NoteReviewStatus) -> bool:
+    return status == expected or str(status) == expected.value
+
+
+def _move_delta_values(impact) -> dict[str, str]:
     if not impact:
-        return ""
-    parts = [
-        f"Ohne Wunschfreund {impact.before_summary.without_wishfriend}->{impact.after_summary.without_wishfriend}",
-        f"Freund 1 {impact.before_summary.friend1_satisfied}->{impact.after_summary.friend1_satisfied}",
-        f"Gegenseitig {impact.before_summary.mutual_satisfied}->{impact.after_summary.mutual_satisfied}",
-        f"Freund 2 {impact.before_summary.friend2_satisfied}->{impact.after_summary.friend2_satisfied}",
-        f"F/L-Minderheit {impact.before_summary.fl_minority}->{impact.after_summary.fl_minority}",
-        f"Musik-Minderheit {impact.before_summary.music_minority}->{impact.after_summary.music_minority}",
-    ]
-    for change in impact.class_size_changes:
-        parts.append(f"{change.class_id} {change.before}->{change.after}")
-    if impact.hard_violations:
-        parts.append(f"Harte Verletzungen: {len(impact.hard_violations)}")
-    return "; ".join(parts)
+        return {}
+    return {
+        row.key: f"{_signed_delta(row.delta)} {row.assessment}"
+        for row in assignment_draft_module.move_delta_rows(impact)
+    }
+
+
+def _signed_delta(value: int) -> str:
+    if value > 0:
+        return f"+{value}"
+    return str(value)
 
 
 def _ratio_value(fulfilled: int | None, total: int | None) -> str:

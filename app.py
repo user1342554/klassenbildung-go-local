@@ -82,6 +82,7 @@ def _reload_stale_project_modules() -> None:
     )
     stale_export = (
         "include_expert_diagnostics" not in inspect.signature(export_excel).parameters
+        or "base_candidate_name" not in inspect.signature(export_excel).parameters
         or not hasattr(excel_export_module, "_write_candidate_summary_sheet")
     )
     if not stale_core and not stale_summary and not stale_review and not stale_export and not stale_draft:
@@ -1126,6 +1127,7 @@ def _result_tab(settings: OptimizationSettings) -> None:
         note_review_status_by_student=_note_review_status_by_student(),
         manual_moves=export_moves,
         manual_move_impacts=export_impacts,
+        base_candidate_name=_export_base_candidate_name(export_draft, solver_result, len(result.students)),
     )
     st.download_button(
         "Excel exportieren",
@@ -1590,6 +1592,15 @@ def _manual_rule_entries_for_export(draft=None):
         entries.append(manual_rules_module.create_manual_rule_entry(rule, source="manual"))
         seen.add(key)
     return entries
+
+
+def _export_base_candidate_name(draft, solver_result, student_count: int) -> str | None:
+    if draft is None:
+        return None
+    for summary in candidate_summaries(solver_result, student_count):
+        if summary.key == draft.base_candidate_key:
+            return f"{summary.key}: {summary.name}"
+    return draft.base_candidate_key
 
 
 def _student_assignment_frame(

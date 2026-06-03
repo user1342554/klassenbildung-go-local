@@ -32,6 +32,7 @@ def test_export_updates_basis_and_creates_class_sheets(sample_workbook_bytes: by
     workbook = load_workbook(io.BytesIO(exported))
 
     assert "Basis" in workbook.sheetnames
+    assert "Übersicht" in workbook.sheetnames
     assert "5a" in workbook.sheetnames
     assert "5b" in workbook.sheetnames
     assert "Auswertung" in workbook.sheetnames
@@ -331,7 +332,7 @@ def test_export_writes_manual_rules_notes_and_changes_sheets() -> None:
     )
     summary = candidate_summary_from_report(candidate, len(students))
     draft = create_assignment_draft(summary)
-    move = ManualMove("s3", "5b", "5a", reason="Teständerung")
+    move = ManualMove("s2", "5a", "5b", reason="Teständerung")
     impact = move_impact(draft, move, summary, students, class_configs, settings)
     manual_rule_entry = create_manual_rule_entry(
         ManualRule("SEPARATE", "s1", "s2"),
@@ -351,17 +352,142 @@ def test_export_writes_manual_rules_notes_and_changes_sheets() -> None:
         note_review_status_by_student={"s1": NoteReviewStatus.CONVERTED_TO_RULE},
         manual_moves=[move],
         manual_move_impacts=[impact],
+        base_candidate_name="E: E beide +1",
         settings=settings,
     )
     workbook = load_workbook(io.BytesIO(exported))
 
+    overview = _overview_values(workbook)
     assert "Manuelle Regeln" in workbook.sheetnames
     assert "Notizen" in workbook.sheetnames
     assert "Manuelle Änderungen" in workbook.sheetnames
+    assert overview["Basis-Kandidat"] == "E: E beide +1"
+    assert overview["Manuell verändert"] == "ja"
     assert workbook["Manuelle Regeln"]["A2"].value == "aktiv"
     assert workbook["Notizen"]["C2"].value == "in Regel umgewandelt"
-    assert workbook["Manuelle Änderungen"]["B2"].value == "3 - V3 N3"
-    assert "Ohne Wunschfreund" in workbook["Manuelle Änderungen"]["G2"].value
+    assert workbook["Manuelle Änderungen"]["B2"].value == "2 - V2 N2"
+    assert workbook["Manuelle Änderungen"]["G1"].value == "Delta ohne Wunschfreund"
+    assert "schlechter" in workbook["Manuelle Änderungen"]["G2"].value
+
+
+def test_export_marks_solution_as_manually_changed() -> None:
+    workbook = _manual_export_workbook()
+    overview = _overview_values(workbook)
+
+    assert overview["Manuell verändert"] == "ja"
+    assert overview["Basis-Kandidat"] == "E: E beide +1"
+
+
+def test_export_manual_changes_count_matches_draft_moves() -> None:
+    workbook = _manual_export_workbook()
+    overview = _overview_values(workbook)
+
+    assert overview["Anzahl manueller Moves"] == 1
+
+
+def test_export_draft_fixations_are_listed() -> None:
+    workbook = _manual_export_workbook(lock_move=True)
+    overview = _overview_values(workbook)
+
+    assert overview["Anzahl Draft-Fixierungen"] == 1
+    assert workbook["Manuelle Änderungen"]["E2"].value == "ja"
+
+
+def test_export_active_manual_rules_match_ui_state() -> None:
+    students = [_student(1, "F", "B"), _student(2, "L", "S")]
+    class_configs = [
+        ClassConfig("5a", "5a", 0, 2, [], []),
+        ClassConfig("5b", "5b", 0, 2, [], []),
+    ]
+    assignments = {"s1": "5a", "s2": "5b"}
+    settings = load_settings()
+    score = score_solution(students, assignments, settings, class_configs)
+    active_rule = create_manual_rule_entry(ManualRule("SEPARATE", "s1", "s2"), source="manual")
+    disabled_rule = create_manual_rule_entry(
+        ManualRule("TOGETHER", "s1", "s2"),
+        source="manual",
+        active=False,
+    )
+
+    exported = export_excel(
+        None,
+        students,
+        assignments,
+        class_configs,
+        score,
+        [],
+        manual_rule_entries=[active_rule, disabled_rule],
+        settings=settings,
+    )
+    workbook = load_workbook(io.BytesIO(exported))
+    overview = _overview_values(workbook)
+
+    assert overview["Anzahl aktiver Regeln"] == 1
+    assert overview["Anzahl deaktivierter Regeln"] == 1
+    assert workbook["Manuelle Regeln"]["A2"].value == "aktiv"
+    assert workbook["Manuelle Regeln"]["A3"].value == "deaktiviert"
+
+
+def _manual_export_workbook(*, lock_move: bool = False):
+    students = [
+        _student(1, "F", "B", friend1="2"),
+        _student(2, "F", "B", friend1="1"),
+        _student(3, "L", "S"),
+    ]
+    class_configs = [
+        ClassConfig("5a", "5a", 0, 3, [], []),
+        ClassConfig("5b", "5b", 0, 3, [], []),
+    ]
+    assignments = {"s1": "5a", "s2": "5a", "s3": "5b"}
+    settings = load_settings()
+    score = score_solution(students, assignments, settings, class_configs)
+    candidate = ProfileSlackReport(
+        variant="E beide +1",
+        language_mixed_limit=2,
+        music_mixed_limit=2,
+        status="FEASIBLE",
+        isolated_friend_request_count=score.isolated_friend_request_count,
+        friend1_fulfilled=score.friend1_fulfilled,
+        friend1_total=score.friend1_total,
+        mutual_friend_fulfilled=score.mutual_friend_fulfilled,
+        mutual_friend_total=score.mutual_friend_total,
+        friend2_fulfilled=score.friend2_fulfilled,
+        friend2_total=score.friend2_total,
+        mixed_language_class_count=score.mixed_language_class_count,
+        mixed_music_class_count=score.mixed_music_class_count,
+        language_minority_student_count=score.language_minority_student_count,
+        music_minority_student_count=score.music_minority_student_count,
+        review_candidate=True,
+        social_limit_met=True,
+        assignments=assignments,
+    )
+    summary = candidate_summary_from_report(candidate, len(students))
+    draft = create_assignment_draft(summary)
+    move = ManualMove("s3", "5b", "5a", lock_after_move=lock_move, reason="Teständerung")
+    impact = move_impact(draft, move, summary, students, class_configs, settings)
+
+    exported = export_excel(
+        None,
+        students,
+        assignments,
+        class_configs,
+        score,
+        [],
+        profile_slack_reports=[candidate],
+        manual_moves=[move],
+        manual_move_impacts=[impact],
+        base_candidate_name="E: E beide +1",
+        settings=settings,
+    )
+    return load_workbook(io.BytesIO(exported))
+
+
+def _overview_values(workbook) -> dict[str, object]:
+    return {
+        row[0]: row[1]
+        for row in workbook["Übersicht"].iter_rows(min_row=2, values_only=True)
+        if row[0]
+    }
 
 
 def _student(
