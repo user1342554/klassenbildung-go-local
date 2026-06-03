@@ -1472,7 +1472,7 @@ def _editor_tab(settings: OptimizationSettings) -> None:
                 class_configs=st.session_state.class_configs,
             )
             _store_editor_draft(updated_draft, [*st.session_state.get("editor_move_impacts", []), impact])
-            st.success(f"{selected.display_label} wurde nach {target_class} verschoben und im Draft fixiert.")
+            st.success(f"{selected.display_label} wurde nach {target_class} verschoben und im manuellen Entwurf fixiert.")
             st.rerun()
 
 
@@ -1506,10 +1506,11 @@ def _store_editor_draft(draft, impacts: list | None) -> None:
 
 
 def _render_editor_draft_rule_summary(draft, students: list[Student]) -> None:
-    st.markdown("**Draft-Fixierungen**")
+    st.markdown("**Draft-Fixierungen (nur Entwurf)**")
     fix_rules = [rule for rule in draft.manual_rules if rule.type == "FIX_CLASS"]
     if not fix_rules:
         st.info("Im aktuellen Draft ist noch kein Schüler fixiert.")
+        st.caption("Aktive manuelle Regeln links gelten beim nächsten Solverlauf. Draft-Fixierungen entstehen erst durch 'Übernehmen und fixieren'.")
         return
     entries = [
         manual_rules_module.create_manual_rule_entry(rule, source="manual")
@@ -1517,7 +1518,11 @@ def _render_editor_draft_rule_summary(draft, students: list[Student]) -> None:
     ]
     frame = pd.DataFrame(manual_rules_module.manual_rule_entry_records(entries, students)).drop(columns=["id"])
     st.dataframe(frame, width="stretch", hide_index=True)
-    st.caption("Diese Fixierungen gelten im aktuellen Draft und erscheinen im Export. Neuoptimierung mit Fixierungen kommt im nächsten Schritt.")
+    st.warning(
+        "Diese Fixierungen gelten aktuell nur im manuellen Entwurf und im Export. "
+        "Sie sind noch keine aktive Solverregel für einen neuen Optimierungslauf."
+    )
+    st.caption("Der nächste Schritt ist 'Neu optimieren mit Fixierungen'; erst dann werden sie als harte Solverfixierungen übernommen.")
 
 
 def _render_editor_note_status_summary(students: list[Student]) -> None:
