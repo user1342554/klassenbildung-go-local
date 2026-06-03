@@ -5,6 +5,9 @@ from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.presentation.result_view_model import CandidateRole, CandidateSource, CandidateSummary
 from klassenbildung.services.assignment_draft import ManualMove, apply_move, create_assignment_draft
 from klassenbildung.services.reoptimization import (
+    ReoptimizationFlowState,
+    ReoptimizationReport,
+    draft_reoptimization_state,
     draft_fixation_rules,
     reoptimization_comparison_rows,
     reoptimization_rules,
@@ -34,6 +37,28 @@ def test_reoptimize_keeps_active_manual_rules() -> None:
     assert report.solver_result.assignments["s1"] != report.solver_result.assignments["s3"]
 
 
+def test_reoptimization_applies_converted_separate_rule() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary, manual_rules=[ManualRule("SEPARATE", "s1", "s3")])
+
+    report = reoptimize_with_manual_fixations(draft, students, classes, settings)
+
+    assert report.succeeded
+    assert report.solver_result.assignments["s1"] != report.solver_result.assignments["s3"]
+
+
+def test_reoptimization_applies_converted_together_rule() -> None:
+    summary, students, classes, settings = _fixture(
+        assignments={"s1": "5a", "s2": "5a", "s3": "5b", "s4": "5b"}
+    )
+    draft = create_assignment_draft(summary, manual_rules=[ManualRule("TOGETHER", "s1", "s3")])
+
+    report = reoptimize_with_manual_fixations(draft, students, classes, settings)
+
+    assert report.succeeded
+    assert report.solver_result.assignments["s1"] == report.solver_result.assignments["s3"]
+
+
 def test_reoptimize_does_not_keep_temporary_moves_unless_fixed() -> None:
     summary, students, classes, _settings = _fixture()
     draft = create_assignment_draft(summary)
@@ -58,6 +83,40 @@ def test_reoptimize_reports_number_of_changed_students() -> None:
     assert report.changed_student_count == expected
 
 
+def test_reoptimization_result_compares_against_base_candidate() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary)
+    fixed = apply_move(draft, ManualMove("s1", "5a", "5b", lock_after_move=True), students=students, class_configs=classes)
+
+    report = reoptimize_with_manual_fixations(
+        fixed,
+        students,
+        classes,
+        settings,
+        base_candidate_name="E: E beide +1",
+    )
+
+    assert report.base_candidate_key == "E"
+    assert report.base_candidate_name == "E: E beide +1"
+    assert report.manual_moves == fixed.moves
+
+
+def test_manual_move_without_lock_is_not_sent_as_fix_rule() -> None:
+    summary, students, classes, _settings = _fixture()
+    draft = create_assignment_draft(summary)
+    temporary = apply_move(draft, ManualMove("s1", "5a", "5b"), students=students, class_configs=classes)
+
+    assert ManualRule("FIX_CLASS", "s1", class_id="5b") not in reoptimization_rules(temporary)
+
+
+def test_manual_move_with_lock_is_sent_as_fix_rule() -> None:
+    summary, students, classes, _settings = _fixture()
+    draft = create_assignment_draft(summary)
+    fixed = apply_move(draft, ManualMove("s1", "5a", "5b", lock_after_move=True), students=students, class_configs=classes)
+
+    assert ManualRule("FIX_CLASS", "s1", class_id="5b") in reoptimization_rules(fixed)
+
+
 def test_reoptimize_compares_before_after_metrics() -> None:
     summary, students, classes, settings = _fixture()
     draft = create_assignment_draft(summary)
@@ -73,9 +132,59 @@ def test_reoptimize_compares_before_after_metrics() -> None:
         "Verschobene Schüler gegenüber Entwurf",
         "Fixierungen verletzt",
     }
+    assert "Bewertung" in rows[0]
 
 
-def _fixture():
+def test_reoptimization_does_not_overwrite_draft_on_infeasible() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary)
+    before_assignments = dict(draft.current_assignments)
+    report = _failed_report("INFEASIBLE", draft, students, classes, settings)
+
+    assert report.flow_state == ReoptimizationFlowState.REOPTIMIZATION_INFEASIBLE
+    assert not report.succeeded
+    assert draft.current_assignments == before_assignments
+
+
+def test_reoptimization_does_not_overwrite_draft_on_unknown() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary)
+    before_assignments = dict(draft.current_assignments)
+    report = _failed_report("UNKNOWN", draft, students, classes, settings)
+
+    assert report.flow_state == ReoptimizationFlowState.REOPTIMIZATION_UNKNOWN
+    assert not report.succeeded
+    assert draft.current_assignments == before_assignments
+
+
+def test_reoptimization_blocked_state_disables_run_button() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary, manual_rules=[ManualRule("SEPARATE", "s1", "s3")])
+    invalid_draft = apply_move(draft, ManualMove("s3", "5b", "5a"), students=students, class_configs=classes)
+    score = score_solution(students, invalid_draft.current_assignments, settings, classes, invalid_draft.manual_rules)
+
+    assert draft_reoptimization_state(invalid_draft, score) == ReoptimizationFlowState.DRAFT_HAS_CONFLICTS
+
+
+def _failed_report(status: str, draft, students, classes, settings) -> ReoptimizationReport:
+    from klassenbildung.core.models import SolverResult
+
+    before_score = score_solution(students, draft.current_assignments, settings, classes, draft.manual_rules)
+    return ReoptimizationReport(
+        solver_result=SolverResult(status, {}),
+        before_score=before_score,
+        after_score=None,
+        changed_student_count=0,
+        fixed_student_ids=set(),
+        applied_rules=reoptimization_rules(draft),
+        base_candidate_key=draft.base_candidate_key,
+        base_candidate_name=draft.base_candidate_key,
+        manual_moves=list(draft.moves),
+        manual_move_impacts=[],
+    )
+
+
+def _fixture(assignments: dict[str, str] | None = None):
     students = [
         _student(1, "F", "B", friend1="2"),
         _student(2, "F", "B", friend1="1"),
@@ -86,7 +195,7 @@ def _fixture():
         ClassConfig("5a", "5a", 0, 4, [], []),
         ClassConfig("5b", "5b", 0, 4, [], []),
     ]
-    assignments = {
+    assignments = assignments or {
         "s1": "5a",
         "s2": "5a",
         "s3": "5b",
