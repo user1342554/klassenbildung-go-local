@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from enum import StrEnum
 
 from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, Student
 from klassenbildung.optimization.scoring import score_solution
@@ -16,6 +17,11 @@ from klassenbildung.services.manual_rules import ManualRuleEntry, active_manual_
 
 class AssignmentDraftError(ValueError):
     pass
+
+
+class DeltaDirection(StrEnum):
+    HIGHER_IS_BETTER = "higher_is_better"
+    LOWER_IS_BETTER = "lower_is_better"
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,27 @@ class MoveImpact:
     class_size_changes: list[ClassSizeChange]
     warnings: list[ReviewWarning]
     hard_violations: list[str]
+
+    @property
+    def applyable(self) -> bool:
+        return not self.hard_violations
+
+
+@dataclass(frozen=True)
+class MoveDeltaRow:
+    key: str
+    label: str
+    before: int
+    after: int
+    delta: int
+    direction: DeltaDirection
+
+    @property
+    def assessment(self) -> str:
+        if self.delta == 0:
+            return "unverändert"
+        improved = self.delta > 0 if self.direction == DeltaDirection.HIGHER_IS_BETTER else self.delta < 0
+        return "besser" if improved else "schlechter"
 
 
 def create_assignment_draft(
@@ -185,6 +212,59 @@ def move_impact(
         warnings=warnings,
         hard_violations=list(after_score.hard_violations),
     )
+
+
+def move_delta_rows(impact: MoveImpact) -> list[MoveDeltaRow]:
+    return [
+        MoveDeltaRow(
+            "without_wishfriend",
+            "Kinder ohne Wunschfreund",
+            impact.before_summary.without_wishfriend,
+            impact.after_summary.without_wishfriend,
+            impact.delta_without_wishfriend,
+            DeltaDirection.LOWER_IS_BETTER,
+        ),
+        MoveDeltaRow(
+            "friend1",
+            "Freund 1 erfüllt",
+            impact.before_summary.friend1_satisfied,
+            impact.after_summary.friend1_satisfied,
+            impact.delta_friend1,
+            DeltaDirection.HIGHER_IS_BETTER,
+        ),
+        MoveDeltaRow(
+            "friend2",
+            "Freund 2 erfüllt",
+            impact.before_summary.friend2_satisfied,
+            impact.after_summary.friend2_satisfied,
+            impact.delta_friend2,
+            DeltaDirection.HIGHER_IS_BETTER,
+        ),
+        MoveDeltaRow(
+            "mutual",
+            "Gegenseitige Freunde erfüllt",
+            impact.before_summary.mutual_satisfied,
+            impact.after_summary.mutual_satisfied,
+            impact.delta_mutual,
+            DeltaDirection.HIGHER_IS_BETTER,
+        ),
+        MoveDeltaRow(
+            "fl_minority",
+            "F/L-Minderheits-Schüler",
+            impact.before_summary.fl_minority,
+            impact.after_summary.fl_minority,
+            impact.delta_fl_minority,
+            DeltaDirection.LOWER_IS_BETTER,
+        ),
+        MoveDeltaRow(
+            "music_minority",
+            "Musik-Minderheits-Schüler",
+            impact.before_summary.music_minority,
+            impact.after_summary.music_minority,
+            impact.delta_music_minority,
+            DeltaDirection.LOWER_IS_BETTER,
+        ),
+    ]
 
 
 def _summary_from_score(base_summary: CandidateSummary, assignments: dict[str, str], score, student_count: int) -> CandidateSummary:

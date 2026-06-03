@@ -70,7 +70,10 @@ def _reload_stale_project_modules() -> None:
 
     stale_core = "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
     stale_summary = not hasattr(candidate_summary_module, "candidate_summary_records")
-    stale_draft = not hasattr(assignment_draft_module, "build_candidate_review_for_draft")
+    stale_draft = (
+        not hasattr(assignment_draft_module, "build_candidate_review_for_draft")
+        or not hasattr(assignment_draft_module, "move_delta_rows")
+    )
     stale_review = (
         not hasattr(candidate_review_module, "build_candidate_review_model")
         or not hasattr(candidate_review_module, "candidate_review_records")
@@ -1430,7 +1433,7 @@ def _editor_tab(settings: OptimizationSettings) -> None:
             target_class == current_class
             or impact is None
             or move_error is not None
-            or bool(impact.hard_violations)
+            or not impact.applyable
         )
         if action_col_a.button("Übernehmen", type="primary", disabled=cannot_apply):
             move = assignment_draft_module.ManualMove(
@@ -1546,23 +1549,16 @@ def _render_editor_note_status_summary(students: list[Student]) -> None:
 
 
 def _move_impact_frame(impact) -> pd.DataFrame:
-    rows = [
-        ("Kinder ohne Wunschfreund", impact.before_summary.without_wishfriend, impact.after_summary.without_wishfriend),
-        ("Freund 1 erfüllt", impact.before_summary.friend1_satisfied, impact.after_summary.friend1_satisfied),
-        ("Freund 2 erfüllt", impact.before_summary.friend2_satisfied, impact.after_summary.friend2_satisfied),
-        ("Gegenseitige Freunde erfüllt", impact.before_summary.mutual_satisfied, impact.after_summary.mutual_satisfied),
-        ("F/L-Minderheits-Schüler", impact.before_summary.fl_minority, impact.after_summary.fl_minority),
-        ("Musik-Minderheits-Schüler", impact.before_summary.music_minority, impact.after_summary.music_minority),
-    ]
     return pd.DataFrame(
         [
             {
-                "Kennzahl": label,
-                "vorher": old,
-                "nachher": new,
-                "Änderung": _signed_delta(new - old),
+                "Kennzahl": row.label,
+                "vorher": row.before,
+                "nachher": row.after,
+                "Änderung": _signed_delta(row.delta),
+                "Bewertung": row.assessment,
             }
-            for label, old, new in rows
+            for row in assignment_draft_module.move_delta_rows(impact)
         ]
     )
 

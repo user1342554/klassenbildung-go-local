@@ -11,6 +11,7 @@ from klassenbildung.services.assignment_draft import (
     apply_move,
     build_candidate_review_for_draft,
     create_assignment_draft,
+    move_delta_rows,
     move_impact,
     revert_last_move,
     score_assignment,
@@ -123,6 +124,26 @@ def test_assignment_draft_detects_converted_manual_rule_violation() -> None:
     assert any(warning.level == "blocker" for warning in impact.warnings)
 
 
+def test_move_impact_with_blockers_is_not_applyable() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary, manual_rules=[ManualRule("SEPARATE", "s1", "s3")])
+
+    impact = move_impact(draft, ManualMove("s3", "5b", "5a"), summary, students, classes, settings)
+
+    assert not impact.applyable
+
+
+def test_assignment_draft_blocks_move_that_violates_active_rule() -> None:
+    summary, students, classes, settings = _fixture()
+    active_rule = create_manual_rule_entry(ManualRule("SEPARATE", "s1", "s3"), source="manual")
+    draft = create_assignment_draft(summary, manual_rule_entries=[active_rule])
+
+    impact = move_impact(draft, ManualMove("s3", "5b", "5a"), summary, students, classes, settings)
+
+    assert not impact.applyable
+    assert impact.hard_violations
+
+
 def test_assignment_draft_disabled_rule_is_not_enforced() -> None:
     summary, students, classes, settings = _fixture()
     disabled_rule = create_manual_rule_entry(
@@ -136,6 +157,21 @@ def test_assignment_draft_disabled_rule_is_not_enforced() -> None:
     score = score_assignment(moved, students, classes, settings)
 
     assert not score.hard_violations
+
+
+def test_assignment_draft_ignores_disabled_rule() -> None:
+    summary, students, classes, settings = _fixture()
+    disabled_rule = create_manual_rule_entry(
+        ManualRule("SEPARATE", "s1", "s3"),
+        source="manual",
+        active=False,
+    )
+    draft = create_assignment_draft(summary, manual_rule_entries=[disabled_rule])
+
+    impact = move_impact(draft, ManualMove("s3", "5b", "5a"), summary, students, classes, settings)
+
+    assert impact.applyable
+    assert not impact.hard_violations
 
 
 def test_assignment_draft_active_rule_is_enforced() -> None:
@@ -185,6 +221,79 @@ def test_assignment_draft_lock_creates_fix_rule() -> None:
     assert not score.hard_violations
 
 
+def test_assignment_draft_fix_move_creates_draft_fixation() -> None:
+    summary, students, classes, _settings = _fixture()
+    draft = create_assignment_draft(summary)
+
+    moved = apply_move(
+        draft,
+        ManualMove("s1", "5a", "5b", lock_after_move=True),
+        students=students,
+        class_configs=classes,
+    )
+
+    assert "s1" in moved.locked_students
+    assert ManualRule("FIX_CLASS", "s1", class_id="5b") in moved.manual_rules
+
+
+def test_assignment_draft_fixation_affects_draft_score() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary)
+    fixed = apply_move(
+        draft,
+        ManualMove("s1", "5a", "5b", lock_after_move=True),
+        students=students,
+        class_configs=classes,
+    )
+    moved_again = apply_move(
+        fixed,
+        ManualMove("s1", "5b", "5a", override_locked=True),
+        students=students,
+        class_configs=classes,
+    )
+
+    score = score_assignment(moved_again, students, classes, settings)
+
+    assert score.hard_violations
+
+
+def test_move_delta_without_wishfriend_increase_is_bad() -> None:
+    summary, students, classes, settings = _fixture()
+    draft = create_assignment_draft(summary)
+
+    impact = move_impact(draft, ManualMove("s2", "5a", "5b"), summary, students, classes, settings)
+    without_wishfriend = _delta_by_key(impact, "without_wishfriend")
+
+    assert without_wishfriend.delta > 0
+    assert without_wishfriend.assessment == "schlechter"
+
+
+def test_move_delta_friend1_increase_is_good() -> None:
+    summary, students, classes, settings = _fixture(
+        assignments={"s1": "5a", "s2": "5b", "s3": "5b", "s4": "5b"}
+    )
+    draft = create_assignment_draft(summary)
+
+    impact = move_impact(draft, ManualMove("s2", "5b", "5a"), summary, students, classes, settings)
+    friend1 = _delta_by_key(impact, "friend1")
+
+    assert friend1.delta > 0
+    assert friend1.assessment == "besser"
+
+
+def test_move_delta_music_minority_decrease_is_good() -> None:
+    summary, students, classes, settings = _fixture(
+        assignments={"s1": "5a", "s2": "5a", "s3": "5a", "s4": "5b"}
+    )
+    draft = create_assignment_draft(summary)
+
+    impact = move_impact(draft, ManualMove("s3", "5a", "5b"), summary, students, classes, settings)
+    music_minority = _delta_by_key(impact, "music_minority")
+
+    assert music_minority.delta < 0
+    assert music_minority.assessment == "besser"
+
+
 def test_assignment_draft_builds_review_model_from_current_assignments() -> None:
     summary, students, classes, settings = _fixture(note_for_s1=True)
     draft = create_assignment_draft(summary)
@@ -204,7 +313,7 @@ def test_assignment_draft_builds_review_model_from_current_assignments() -> None
     assert review.students_with_manual_notes[0].review_status == NoteReviewStatus.KEPT_AS_NOTE
 
 
-def _fixture(note_for_s1: bool = False):
+def _fixture(note_for_s1: bool = False, assignments: dict[str, str] | None = None):
     students = [
         _student(1, "F", "B", friend1="2", note_text="prüfen" if note_for_s1 else None),
         _student(2, "F", "B", friend1="1"),
@@ -215,7 +324,7 @@ def _fixture(note_for_s1: bool = False):
         ClassConfig("5a", "5a", 0, 4, [], []),
         ClassConfig("5b", "5b", 0, 4, [], []),
     ]
-    assignments = {
+    assignments = assignments or {
         "s1": "5a",
         "s2": "5a",
         "s3": "5b",
@@ -225,6 +334,10 @@ def _fixture(note_for_s1: bool = False):
     score = score_solution(students, assignments, settings, classes)
     summary = _summary(assignments, score, len(students))
     return summary, students, classes, settings
+
+
+def _delta_by_key(impact, key: str):
+    return next(row for row in move_delta_rows(impact) if row.key == key)
 
 
 def _summary(assignments: dict[str, str], score, student_count: int) -> CandidateSummary:
