@@ -15,6 +15,7 @@ import klassenbildung.core.settings as core_settings_module
 import klassenbildung.excel_io.excel_export as excel_export_module
 import klassenbildung.presentation.candidate_review as candidate_review_module
 import klassenbildung.presentation.candidate_summary as candidate_summary_module
+import klassenbildung.services.manual_rules as manual_rules_module
 import klassenbildung.services.note_rule_conversion as note_rule_conversion_module
 from klassenbildung.core.constants import DEFAULT_WEIGHTS
 from klassenbildung.core.models import (
@@ -63,7 +64,7 @@ def _reload_stale_project_modules() -> None:
     global coerce_settings, generate_class_configs, load_class_configs, load_settings
     global save_class_configs, save_settings
     global export_excel
-    global candidate_review_module, candidate_summary_module, note_rule_conversion_module
+    global candidate_review_module, candidate_summary_module, manual_rules_module, note_rule_conversion_module
 
     stale_core = "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
     stale_summary = not hasattr(candidate_summary_module, "candidate_summary_records")
@@ -95,6 +96,7 @@ def _reload_stale_project_modules() -> None:
         load_settings = reloaded_settings.load_settings
         save_class_configs = reloaded_settings.save_class_configs
         save_settings = reloaded_settings.save_settings
+        manual_rules_module = importlib.reload(manual_rules_module)
         note_rule_conversion_module = importlib.reload(note_rule_conversion_module)
 
     if stale_summary:
@@ -278,21 +280,55 @@ def _init_state() -> None:
     st.session_state.setdefault("validation_result", None)
     st.session_state.setdefault("solver_result", None)
     st.session_state.setdefault("manual_rules", [])
+    st.session_state.setdefault("manual_rule_entries", [])
     st.session_state.setdefault("note_hints_kept", set())
 
 
 def _manual_rules() -> list[ManualRule]:
-    return list(st.session_state.get("manual_rules", []))
-
-
-def _store_manual_rule(rule: ManualRule) -> bool:
-    rules = _manual_rules()
-    if rule in rules:
-        return False
-    rules.append(rule)
+    entries = _manual_rule_entries()
+    rules = manual_rules_module.active_manual_rules(entries)
     st.session_state.manual_rules = rules
+    return rules
+
+
+def _manual_rule_entries():
+    raw_entries = st.session_state.get("manual_rule_entries", [])
+    if not raw_entries and st.session_state.get("manual_rules"):
+        raw_entries = st.session_state.manual_rules
+    entries = manual_rules_module.manual_rule_entries(raw_entries)
+    st.session_state.manual_rule_entries = entries
+    return entries
+
+
+def _store_manual_rule(
+    rule: ManualRule,
+    *,
+    source: str,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+    note_student_id: str | None = None,
+) -> tuple[bool, list[ValidationMessage]]:
+    entries = _manual_rule_entries()
+    errors = manual_rules_module.validation_errors_for_new_rule(
+        students,
+        class_configs,
+        settings,
+        entries,
+        rule,
+    )
+    if errors:
+        return False, errors
+    entries, changed = manual_rules_module.add_manual_rule_entry(
+        entries,
+        rule,
+        source=source,
+        note_student_id=note_student_id,
+    )
+    st.session_state.manual_rule_entries = entries
+    st.session_state.manual_rules = manual_rules_module.active_manual_rules(entries)
     st.session_state.solver_result = None
-    return True
+    return changed, []
 
 
 def _current_settings() -> OptimizationSettings:
@@ -647,6 +683,7 @@ def _upload_tab(settings: OptimizationSettings) -> None:
             st.session_state.validation_result = None
             st.session_state.solver_result = None
             st.session_state.manual_rules = []
+            st.session_state.manual_rule_entries = []
             st.session_state.note_hints_kept = set()
             st.rerun()
         col_b.download_button(
@@ -664,6 +701,7 @@ def _upload_tab(settings: OptimizationSettings) -> None:
         st.session_state.validation_result = None
         st.session_state.solver_result = None
         st.session_state.manual_rules = []
+        st.session_state.manual_rule_entries = []
         st.session_state.note_hints_kept = set()
 
     result = st.session_state.import_result
@@ -713,6 +751,7 @@ def _upload_tab(settings: OptimizationSettings) -> None:
         if visible_warnings:
             st.warning(f"{len(visible_warnings)} Dinge bitte in der Excel-Datei prüfen.")
             st.dataframe(messages_to_frame(visible_warnings), width="stretch", hide_index=True)
+    _render_manual_rules_panel(result.students, st.session_state.class_configs, settings, "upload")
 
 
 def _validation_tab(settings: OptimizationSettings) -> None:
@@ -745,6 +784,112 @@ def _comments_tab() -> None:
         st.success("Keine Bemerkungen gefunden.")
     else:
         st.dataframe(frame, width="stretch")
+
+
+def _render_manual_rules_panel(
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+    key_suffix: str,
+) -> None:
+    entries = _manual_rule_entries()
+    st.markdown("**Aktive manuelle Regeln**")
+    records = manual_rules_module.manual_rule_entry_records(entries, students)
+    if not records:
+        st.info("Noch keine manuellen Regeln angelegt.")
+        return
+
+    st.dataframe(pd.DataFrame(records).drop(columns=["id"]), width="stretch", hide_index=True)
+    entry_by_id = {entry.id: entry for entry in entries}
+    selected_id = st.selectbox(
+        "Regel auswählen",
+        options=list(entry_by_id),
+        format_func=lambda entry_id: _manual_rule_option_label(entry_by_id[entry_id], students),
+        key=f"manual_rule_select_{key_suffix}",
+    )
+    selected_entry = entry_by_id[selected_id]
+    action_col_a, action_col_b = st.columns(2)
+    active_label = "Deaktivieren" if selected_entry.active else "Aktivieren"
+    if action_col_a.button(active_label, key=f"manual_rule_toggle_{key_suffix}"):
+        st.session_state.manual_rule_entries = manual_rules_module.update_manual_rule_entry(
+            entries,
+            selected_entry.id,
+            active=not selected_entry.active,
+        )
+        st.session_state.manual_rules = _manual_rules()
+        st.session_state.solver_result = None
+        st.rerun()
+    if action_col_b.button("Löschen", key=f"manual_rule_delete_{key_suffix}"):
+        st.session_state.manual_rule_entries = manual_rules_module.delete_manual_rule_entry(entries, selected_entry.id)
+        st.session_state.manual_rules = _manual_rules()
+        st.session_state.solver_result = None
+        st.rerun()
+
+    with st.expander("Regel bearbeiten", expanded=False):
+        updated_rule = _manual_rule_edit_controls(selected_entry.rule, students, class_configs, key_suffix)
+        if st.button("Regel speichern", key=f"manual_rule_save_{key_suffix}"):
+            updated_entries = manual_rules_module.update_manual_rule_entry(entries, selected_entry.id, rule=updated_rule)
+            errors = manual_rules_module.validation_errors_for_entries(students, class_configs, settings, updated_entries)
+            if errors:
+                st.error("Diese Änderung erzeugt Regelkonflikte.")
+                st.dataframe(messages_to_frame(errors), width="stretch", hide_index=True)
+            else:
+                st.session_state.manual_rule_entries = updated_entries
+                st.session_state.manual_rules = _manual_rules()
+                st.session_state.solver_result = None
+                st.success("Regel gespeichert. Bitte danach neu optimieren.")
+                st.rerun()
+
+
+def _manual_rule_edit_controls(rule: ManualRule, students: list[Student], class_configs: list[ClassConfig], key_suffix: str) -> ManualRule:
+    rule_type_options = {
+        "Trennen": "SEPARATE",
+        "Zusammen": "TOGETHER",
+        "Fixierung": "FIX_CLASS",
+    }
+    current_label = next(label for label, value in rule_type_options.items() if value == rule.type)
+    selected_type_label = st.selectbox(
+        "Typ",
+        options=list(rule_type_options),
+        index=list(rule_type_options).index(current_label),
+        key=f"manual_rule_edit_type_{key_suffix}",
+    )
+    selected_type = rule_type_options[selected_type_label]
+    student_labels = {student.display_label: student.internal_id for student in students}
+    student_label_by_id = {value: label for label, value in student_labels.items()}
+    student_a_label = st.selectbox(
+        "Schüler",
+        options=sorted(student_labels),
+        index=sorted(student_labels).index(student_label_by_id.get(rule.student_a, sorted(student_labels)[0])),
+        key=f"manual_rule_edit_student_a_{key_suffix}",
+    )
+    student_a = student_labels[student_a_label]
+    if selected_type == "FIX_CLASS":
+        class_ids = [config.class_id for config in class_configs]
+        selected_class = st.selectbox(
+            "Zielklasse",
+            options=class_ids,
+            index=class_ids.index(rule.class_id) if rule.class_id in class_ids else 0,
+            key=f"manual_rule_edit_class_{key_suffix}",
+        )
+        return ManualRule("FIX_CLASS", student_a, class_id=selected_class)
+
+    other_options = sorted(label for label, student_id in student_labels.items() if student_id != student_a)
+    if not other_options:
+        return ManualRule(selected_type, student_a, student_a)
+    current_other_label = student_label_by_id.get(rule.student_b, other_options[0])
+    other_label = st.selectbox(
+        "Partner",
+        options=other_options,
+        index=other_options.index(current_other_label) if current_other_label in other_options else 0,
+        key=f"manual_rule_edit_student_b_{key_suffix}",
+    )
+    return ManualRule(selected_type, student_a, student_labels[other_label])
+
+
+def _manual_rule_option_label(entry, students: list[Student]) -> str:
+    record = manual_rules_module.manual_rule_entry_records([entry], students)[0]
+    return f"{record['Typ']}: {record['Schüler']} -> {record['Ziel / Partner']} ({record['Status']})"
 
 
 def _class_config_tab() -> None:
@@ -880,6 +1025,7 @@ def _result_tab(settings: OptimizationSettings) -> None:
         return
 
     score = solver_result.score_report
+    _render_manual_rules_panel(result.students, st.session_state.class_configs, settings, "result")
     _render_standard_result(
         solver_result,
         result.students,
@@ -1957,7 +2103,7 @@ def _render_candidate_review(
         else:
             st.caption("Diese Notizen wurden nicht automatisch verstanden. Bitte manuell prüfen oder in harte Regeln umwandeln.")
             st.dataframe(note_frame, width="stretch", hide_index=True)
-            _render_note_rule_controls(review.students_with_manual_notes, students, class_configs, key_suffix)
+            _render_note_rule_controls(review.students_with_manual_notes, students, class_configs, settings, key_suffix)
     with tab_d:
         fl_frame = _review_mixed_class_frame(review.fl_mixed_classes)
         if fl_frame.empty:
@@ -1974,7 +2120,13 @@ def _render_candidate_review(
         st.dataframe(_review_class_load_frame(review.class_load_rows), width="stretch", hide_index=True)
 
 
-def _render_note_rule_controls(note_rows, students: list[Student], class_configs: list[ClassConfig], key_suffix: str) -> None:
+def _render_note_rule_controls(
+    note_rows,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+    key_suffix: str,
+) -> None:
     st.markdown("**Notiz in Regel umwandeln**")
     note_by_id = {row.student_id: row for row in note_rows}
     note_options = list(note_by_id)
@@ -2049,12 +2201,25 @@ def _render_note_rule_controls(note_rows, students: list[Student], class_configs
                     rule_type,
                     selected_student_id=other_student_id,
                     class_id=class_id,
+                    available_class_ids=[config.class_id for config in class_configs],
                     confirmed=True,
                 )
-                if result.rule and _store_manual_rule(result.rule):
-                    st.success("Regel angelegt. Bitte danach neu optimieren.")
-                else:
-                    st.info("Diese Regel ist bereits aktiv.")
+                if result.rule:
+                    changed, errors = _store_manual_rule(
+                        result.rule,
+                        source="note",
+                        students=students,
+                        class_configs=class_configs,
+                        settings=settings,
+                        note_student_id=result.student_id,
+                    )
+                    if errors:
+                        st.error("Diese Regel erzeugt Konflikte und wurde nicht gespeichert.")
+                        st.dataframe(messages_to_frame(errors), width="stretch", hide_index=True)
+                    elif changed:
+                        st.success("Regel angelegt. Bitte danach neu optimieren.")
+                    else:
+                        st.info("Diese Regel ist bereits aktiv.")
         except note_rule_conversion_module.NoteRuleConversionError as error:
             st.error(str(error))
 
