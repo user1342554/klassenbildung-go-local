@@ -77,7 +77,11 @@ def _reload_stale_project_modules() -> None:
         or not hasattr(assignment_draft_module, "move_delta_rows")
     )
     stale_manual_rules = not hasattr(manual_rules_module, "student_effective_note_text")
-    stale_reoptimization = not hasattr(reoptimization_module, "reoptimize_with_manual_fixations")
+    stale_reoptimization = (
+        not hasattr(reoptimization_module, "reoptimize_with_manual_fixations")
+        or not hasattr(reoptimization_module, "ReoptimizationFlowState")
+        or not hasattr(reoptimization_module, "draft_reoptimization_state")
+    )
     stale_reoptimization_view = not hasattr(reoptimization_view_module, "reoptimization_summary_text")
     stale_review = (
         not hasattr(candidate_review_module, "build_candidate_review_model")

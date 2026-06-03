@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import importlib
+
+import pytest
+
+import klassenbildung.services.reoptimization as reoptimization_module
 from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, SolverResult, Student
 from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.presentation.reoptimization_view import (
@@ -32,6 +37,17 @@ def test_reoptimization_view_shows_base_and_result_metrics() -> None:
     assert "Kinder ohne Wunschfreund" in text
     assert "Freund 1 erfüllt" in text
     assert report.base_candidate_name == "E: E beide +1"
+
+
+def test_reoptimization_view_import_tolerates_stale_service_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(reoptimization_module, "ReoptimizationFlowState")
+    import klassenbildung.presentation.reoptimization_view as reoptimization_view
+
+    importlib.reload(reoptimization_view)
+
+    assert hasattr(reoptimization_view, "reoptimization_summary_text")
+    importlib.reload(reoptimization_module)
+    importlib.reload(reoptimization_view)
 
 
 def test_reoptimization_view_hides_solver_jargon_in_standard_mode() -> None:

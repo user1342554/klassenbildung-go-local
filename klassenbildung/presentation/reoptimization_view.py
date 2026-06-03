@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from klassenbildung.services.reoptimization import ReoptimizationFlowState, ReoptimizationReport
+from typing import TYPE_CHECKING
+
+import klassenbildung.services.reoptimization as reoptimization_module
+
+if TYPE_CHECKING:
+    from klassenbildung.services.reoptimization import ReoptimizationReport
 
 
 STANDARD_REOPTIMIZATION_FORBIDDEN_JARGON = [
@@ -15,39 +20,41 @@ STANDARD_REOPTIMIZATION_FORBIDDEN_JARGON = [
 ]
 
 
-def reoptimization_state_text(state: ReoptimizationFlowState) -> str:
+def reoptimization_state_text(state) -> str:
+    states = reoptimization_module.ReoptimizationFlowState
     return {
-        ReoptimizationFlowState.DRAFT_EDITED: "Manuell bearbeiteter Entwurf",
-        ReoptimizationFlowState.DRAFT_HAS_CONFLICTS: "Blockiert durch Regelkonflikt",
-        ReoptimizationFlowState.DRAFT_READY_FOR_REOPTIMIZATION: "Bereit für Neuoptimierung mit Fixierungen",
-        ReoptimizationFlowState.REOPTIMIZATION_FOUND_SOLUTION: "Neu optimierte Lösung mit Fixierungen gefunden",
-        ReoptimizationFlowState.REOPTIMIZATION_FOUND_REVIEW_CANDIDATES: "Neu optimierte Prüfkandidaten gefunden",
-        ReoptimizationFlowState.REOPTIMIZATION_INFEASIBLE: "Mit diesen Regeln nicht lösbar",
-        ReoptimizationFlowState.REOPTIMIZATION_UNKNOWN: "Keine entscheidbare neue Lösung gefunden",
-        ReoptimizationFlowState.REOPTIMIZATION_ERROR: "Neuoptimierung fehlgeschlagen",
+        states.DRAFT_EDITED: "Manuell bearbeiteter Entwurf",
+        states.DRAFT_HAS_CONFLICTS: "Blockiert durch Regelkonflikt",
+        states.DRAFT_READY_FOR_REOPTIMIZATION: "Bereit für Neuoptimierung mit Fixierungen",
+        states.REOPTIMIZATION_FOUND_SOLUTION: "Neu optimierte Lösung mit Fixierungen gefunden",
+        states.REOPTIMIZATION_FOUND_REVIEW_CANDIDATES: "Neu optimierte Prüfkandidaten gefunden",
+        states.REOPTIMIZATION_INFEASIBLE: "Mit diesen Regeln nicht lösbar",
+        states.REOPTIMIZATION_UNKNOWN: "Keine entscheidbare neue Lösung gefunden",
+        states.REOPTIMIZATION_ERROR: "Neuoptimierung fehlgeschlagen",
     }[state]
 
 
-def reoptimization_action_hints(state: ReoptimizationFlowState) -> list[str]:
-    if state == ReoptimizationFlowState.DRAFT_HAS_CONFLICTS:
+def reoptimization_action_hints(state) -> list[str]:
+    states = reoptimization_module.ReoptimizationFlowState
+    if state == states.DRAFT_HAS_CONFLICTS:
         return [
             "Regelkonflikte lösen.",
             "Letzte Änderung rückgängig machen.",
             "Fixierungen oder manuelle Regeln bearbeiten.",
         ]
-    if state == ReoptimizationFlowState.REOPTIMIZATION_INFEASIBLE:
+    if state == states.REOPTIMIZATION_INFEASIBLE:
         return [
             "Zu viele Fixierungen oder widersprüchliche Regeln prüfen.",
             "Fixierungen lockern.",
             "Klassengrößen und harte Regeln prüfen.",
         ]
-    if state == ReoptimizationFlowState.REOPTIMIZATION_UNKNOWN:
+    if state == states.REOPTIMIZATION_UNKNOWN:
         return [
             "Der bisherige Entwurf bleibt erhalten.",
             "Suchzeit erhöhen oder Fixierungen vereinfachen.",
             "Neuoptimierung erneut versuchen.",
         ]
-    if state == ReoptimizationFlowState.REOPTIMIZATION_ERROR:
+    if state == states.REOPTIMIZATION_ERROR:
         return ["Fehler prüfen und bisherigen Entwurf behalten."]
     return []
 
