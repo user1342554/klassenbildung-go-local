@@ -120,10 +120,12 @@ def reoptimization_comparison_rows(report: ReoptimizationReport) -> list[dict[st
         ("Freund 1 erfüllt", report.before_score.friend1_fulfilled, report.after_score.friend1_fulfilled, "higher"),
         ("Gegenseitige Freunde erfüllt", report.before_score.mutual_friend_fulfilled, report.after_score.mutual_friend_fulfilled, "higher"),
         ("Freund 2 erfüllt", report.before_score.friend2_fulfilled, report.after_score.friend2_fulfilled, "higher"),
+        ("F/L-Mischklassen", report.before_score.mixed_language_class_count, report.after_score.mixed_language_class_count, "lower"),
+        ("Musik-Mischklassen", report.before_score.mixed_music_class_count, report.after_score.mixed_music_class_count, "lower"),
         ("F/L-Minderheits-Schüler", report.before_score.language_minority_student_count, report.after_score.language_minority_student_count, "lower"),
         ("Musik-Minderheits-Schüler", report.before_score.music_minority_student_count, report.after_score.music_minority_student_count, "lower"),
         ("Verschobene Schüler gegenüber Entwurf", 0, report.changed_student_count, "neutral"),
-        ("Fixierungen verletzt", 0, len(report.after_score.hard_violations), "lower"),
+        ("harte Regelverletzungen", len(report.before_score.hard_violations), len(report.after_score.hard_violations), "lower"),
     ]
     return [
         {

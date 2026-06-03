@@ -129,9 +129,11 @@ def test_reoptimize_compares_before_after_metrics() -> None:
     assert {row["Kennzahl"] for row in rows} >= {
         "Kinder ohne Wunschfreund",
         "Freund 1 erfüllt",
+        "F/L-Mischklassen",
+        "Musik-Mischklassen",
         "Musik-Minderheits-Schüler",
         "Verschobene Schüler gegenüber Entwurf",
-        "Fixierungen verletzt",
+        "harte Regelverletzungen",
     }
     assert "Bewertung" in rows[0]
 

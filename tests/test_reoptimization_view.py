@@ -33,9 +33,15 @@ def test_reoptimization_view_shows_base_and_result_metrics() -> None:
 
     text = reoptimization_visible_text(report)
 
+    assert "Ausgang: E: E beide +1" in text
+    assert "Fixierungen: 1" in text
+    assert "weitere aktive Regeln: 0" in text
     assert "Neu optimierte" in text
     assert "Kinder ohne Wunschfreund" in text
     assert "Freund 1 erfüllt" in text
+    assert "F/L-Mischklassen" in text
+    assert "Musik-Mischklassen" in text
+    assert "harte Regelverletzungen" in text
     assert report.base_candidate_name == "E: E beide +1"
 
 

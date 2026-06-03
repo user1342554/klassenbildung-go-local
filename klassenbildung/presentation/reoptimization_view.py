@@ -16,7 +16,11 @@ STANDARD_REOPTIMIZATION_FORBIDDEN_JARGON = [
     "Objective",
     "Best Bound",
     "Incumbent",
+    "Draft",
     "Draft intern",
+    "Slack",
+    "Payload",
+    "Solverphase",
 ]
 
 
@@ -61,12 +65,13 @@ def reoptimization_action_hints(state) -> list[str]:
 
 def reoptimization_summary_text(report: ReoptimizationReport) -> str:
     state = report.flow_state
+    context = _reoptimization_context_text(report)
     if report.succeeded:
         return (
-            f"{reoptimization_state_text(state)}: {report.changed_student_count} Schüler gegenüber dem manuellen Entwurf verändert, "
-            f"{len(report.fixed_student_ids)} Fixierungen übernommen."
+            f"{context} {reoptimization_state_text(state)}: "
+            f"{report.changed_student_count} Schüler gegenüber dem manuellen Entwurf verändert."
         )
-    return f"{reoptimization_state_text(state)}. Der bisherige Entwurf bleibt erhalten."
+    return f"{context} {reoptimization_state_text(state)}. Der bisherige Entwurf bleibt erhalten."
 
 
 def reoptimization_visible_text(report: ReoptimizationReport) -> str:
@@ -81,3 +86,11 @@ def report_comparison_records(report: ReoptimizationReport) -> list[dict[str, ob
     from klassenbildung.services.reoptimization import reoptimization_comparison_rows
 
     return reoptimization_comparison_rows(report)
+
+
+def _reoptimization_context_text(report: ReoptimizationReport) -> str:
+    active_rule_count = len([rule for rule in report.applied_rules if rule.type != "FIX_CLASS"])
+    return (
+        f"Ausgang: {report.base_candidate_name}. "
+        f"Fixierungen: {len(report.fixed_student_ids)}, weitere aktive Regeln: {active_rule_count}."
+    )
