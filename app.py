@@ -15,9 +15,11 @@ import klassenbildung.core.settings as core_settings_module
 import klassenbildung.excel_io.excel_export as excel_export_module
 import klassenbildung.presentation.candidate_review as candidate_review_module
 import klassenbildung.presentation.candidate_summary as candidate_summary_module
+import klassenbildung.services.note_rule_conversion as note_rule_conversion_module
 from klassenbildung.core.constants import DEFAULT_WEIGHTS
 from klassenbildung.core.models import (
     ClassConfig,
+    ManualRule,
     OptimizationSettings,
     Student,
     ValidationMessage,
@@ -274,6 +276,22 @@ def _init_state() -> None:
     st.session_state.setdefault("import_result", None)
     st.session_state.setdefault("validation_result", None)
     st.session_state.setdefault("solver_result", None)
+    st.session_state.setdefault("manual_rules", [])
+    st.session_state.setdefault("note_hints_kept", set())
+
+
+def _manual_rules() -> list[ManualRule]:
+    return list(st.session_state.get("manual_rules", []))
+
+
+def _store_manual_rule(rule: ManualRule) -> bool:
+    rules = _manual_rules()
+    if rule in rules:
+        return False
+    rules.append(rule)
+    st.session_state.manual_rules = rules
+    st.session_state.solver_result = None
+    return True
 
 
 def _current_settings() -> OptimizationSettings:
@@ -627,6 +645,8 @@ def _upload_tab(settings: OptimizationSettings) -> None:
             st.session_state.import_result = result
             st.session_state.validation_result = None
             st.session_state.solver_result = None
+            st.session_state.manual_rules = []
+            st.session_state.note_hints_kept = set()
             st.rerun()
         col_b.download_button(
             "Testdatei herunterladen",
@@ -642,6 +662,8 @@ def _upload_tab(settings: OptimizationSettings) -> None:
         st.session_state.import_result = result
         st.session_state.validation_result = None
         st.session_state.solver_result = None
+        st.session_state.manual_rules = []
+        st.session_state.note_hints_kept = set()
 
     result = st.session_state.import_result
     if not result:
@@ -677,6 +699,7 @@ def _upload_tab(settings: OptimizationSettings) -> None:
         result.students,
         st.session_state.class_configs,
         settings,
+        manual_rules=_manual_rules(),
         base_messages=result.messages,
     )
     st.session_state.validation_result = validation_result
@@ -700,6 +723,7 @@ def _validation_tab(settings: OptimizationSettings) -> None:
         result.students,
         st.session_state.class_configs,
         settings,
+        manual_rules=_manual_rules(),
         base_messages=result.messages,
     )
     st.session_state.validation_result = validation_result
@@ -775,6 +799,7 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
         result.students,
         st.session_state.class_configs,
         settings,
+        manual_rules=_manual_rules(),
         base_messages=result.messages,
     )
     if validation_result.has_errors:
@@ -787,7 +812,12 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
         started_at = perf_counter()
         status_box.info("Optimierung läuft. Der PC rechnet gerade...")
         with st.spinner("Klassen werden berechnet..."):
-            solver_result = solve_assignments(result.students, st.session_state.class_configs, settings)
+            solver_result = solve_assignments(
+                result.students,
+                st.session_state.class_configs,
+                settings,
+                manual_rules=_manual_rules(),
+            )
         st.session_state.solver_result = solver_result
         elapsed = perf_counter() - started_at
         if solver_result.status in {"OPTIMAL", "FEASIBLE"}:
@@ -1118,6 +1148,7 @@ def _editor_tab(settings: OptimizationSettings) -> None:
             updated_assignments,
             settings,
             st.session_state.class_configs,
+            manual_rules=_manual_rules(),
         )
         if target_class != current_class:
             st.markdown("**Folgen dieser Änderung**")
@@ -1888,6 +1919,7 @@ def _render_candidate_review(
         else:
             st.caption("Diese Notizen wurden nicht automatisch verstanden. Bitte manuell prüfen oder in harte Regeln umwandeln.")
             st.dataframe(note_frame, width="stretch", hide_index=True)
+            _render_note_rule_controls(review.students_with_manual_notes, students, class_configs, key_suffix)
     with tab_d:
         fl_frame = _review_mixed_class_frame(review.fl_mixed_classes)
         if fl_frame.empty:
@@ -1902,6 +1934,95 @@ def _render_candidate_review(
             st.dataframe(music_frame, width="stretch", hide_index=True)
     with tab_f:
         st.dataframe(_review_class_load_frame(review.class_load_rows), width="stretch", hide_index=True)
+
+
+def _render_note_rule_controls(note_rows, students: list[Student], class_configs: list[ClassConfig], key_suffix: str) -> None:
+    st.markdown("**Notiz in Regel umwandeln**")
+    note_by_id = {row.student_id: row for row in note_rows}
+    note_options = list(note_by_id)
+    if not note_options:
+        return
+    selected_note_id = st.selectbox(
+        "Notiz auswählen",
+        options=note_options,
+        format_func=lambda student_id: note_by_id[student_id].display_name,
+        key=f"note_rule_student_{key_suffix}",
+    )
+    selected_note = note_by_id[selected_note_id]
+    st.caption(f"Manuelle Notiz: {selected_note.note_text}")
+    action = st.radio(
+        "Aktion",
+        options=[
+            "Als Trennregel anlegen",
+            "Als Zusammenregel anlegen",
+            "Als Klassenfixierung anlegen",
+            "Nur als Hinweis behalten",
+        ],
+        key=f"note_rule_action_{key_suffix}",
+    )
+
+    other_student_id = None
+    class_id = None
+    if action in {"Als Trennregel anlegen", "Als Zusammenregel anlegen"}:
+        other_labels = {
+            student.display_label: student.internal_id
+            for student in students
+            if student.internal_id != selected_note_id
+        }
+        if not other_labels:
+            st.warning("Für eine Paarregel fehlt ein zweiter Schüler.")
+            return
+        other_label = st.selectbox(
+            "Zweiter Schüler",
+            options=sorted(other_labels),
+            key=f"note_rule_other_{key_suffix}",
+        )
+        other_student_id = other_labels[other_label]
+    elif action == "Als Klassenfixierung anlegen":
+        if not class_configs:
+            st.warning("Für eine Klassenfixierung ist keine Zielklasse konfiguriert.")
+            return
+        class_id = st.selectbox(
+            "Zielklasse",
+            options=[config.class_id for config in class_configs],
+            key=f"note_rule_class_{key_suffix}",
+        )
+
+    if st.button("Entscheidung übernehmen", key=f"note_rule_submit_{key_suffix}"):
+        try:
+            if action == "Nur als Hinweis behalten":
+                result = note_rule_conversion_module.keep_note_as_hint(
+                    students,
+                    selected_note_id,
+                    confirmed=True,
+                )
+                st.session_state.note_hints_kept = set(st.session_state.get("note_hints_kept", set()))
+                st.session_state.note_hints_kept.add(result.student_id)
+                st.info("Notiz bleibt als Hinweis erhalten.")
+            else:
+                rule_type = {
+                    "Als Trennregel anlegen": "SEPARATE",
+                    "Als Zusammenregel anlegen": "TOGETHER",
+                    "Als Klassenfixierung anlegen": "FIX_CLASS",
+                }[action]
+                result = note_rule_conversion_module.convert_note_to_manual_rule(
+                    students,
+                    selected_note_id,
+                    rule_type,
+                    selected_student_id=other_student_id,
+                    class_id=class_id,
+                    confirmed=True,
+                )
+                if result.rule and _store_manual_rule(result.rule):
+                    st.success("Regel angelegt. Bitte danach neu optimieren.")
+                else:
+                    st.info("Diese Regel ist bereits aktiv.")
+        except note_rule_conversion_module.NoteRuleConversionError as error:
+            st.error(str(error))
+
+    active_rules = _manual_rules()
+    if active_rules:
+        st.caption(f"Aktive manuelle Regeln: {len(active_rules)}")
 
 
 def _render_quality_notice(solver_result, student_count: int) -> None:
