@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 import os
@@ -1077,7 +1077,7 @@ def _build_profile_slack_reports(
         )
     ]
     candidate_by_variant = {candidates[0].variant: candidates[0]}
-    cache_key = _profile_incumbent_cache_key(students, class_configs, manual_rules)
+    cache_key = _profile_incumbent_cache_key(students, class_configs, settings, manual_rules)
     refinement_reports: list[ProfileSlackReport] = []
     variants = [
         ("B Musik +1", language_mixed_limit, music_mixed_limit + 1),
@@ -1381,6 +1381,7 @@ def _apply_dominance_to_candidates(
 def _profile_incumbent_cache_key(
     students: list[Student],
     class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
     manual_rules: list[ManualRule],
 ) -> str:
     payload = {
@@ -1405,9 +1406,11 @@ def _profile_incumbent_cache_key(
                 "max": config.size_max,
                 "music": sorted(config.music_allowed),
                 "language": sorted(config.languages_allowed),
+                "size_policy": _size_policy_payload(config),
             }
             for config in class_configs
         ],
+        "settings": asdict(settings),
         "rules": [
             {
                 "type": rule.type,
@@ -1420,6 +1423,13 @@ def _profile_incumbent_cache_key(
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _size_policy_payload(config: ClassConfig) -> dict[str, int] | None:
+    policy = getattr(config, "size_policy", None)
+    if not policy:
+        return None
+    return asdict(policy)
 
 
 def _cached_profile_candidate(

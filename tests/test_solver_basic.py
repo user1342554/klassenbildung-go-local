@@ -5,7 +5,8 @@ from itertools import chain, repeat
 
 import pytest
 
-from klassenbildung.core.models import ClassConfig, ClassSizePolicy, OptimizationSettings, ScoreReport, Student
+import klassenbildung.optimization.solver as solver_module
+from klassenbildung.core.models import ClassConfig, ClassSizePolicy, ManualRule, OptimizationSettings, ScoreReport, Student
 from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.optimization.solver import (
     _build_phase_report,
@@ -96,6 +97,21 @@ def _score_report_for_candidate(
         isolated_friend_request_count=isolated,
         class_reports=[],
     )
+
+
+def _cache_fixture() -> tuple[list[Student], list[ClassConfig], OptimizationSettings]:
+    students = [_student(1, "F"), _student(2, "L")]
+    classes = [
+        ClassConfig("5a", "5a", 0, 2, [], []),
+        ClassConfig("5b", "5b", 0, 2, [], []),
+    ]
+    return students, classes, _zero_settings(weight_friend1=1)
+
+
+def _seed_incumbent_cache(cache_key: str, assignments: dict[str, str]) -> None:
+    solver_module._PROFILE_INCUMBENT_CACHE.clear()
+    solver_module._PROFILE_INCUMBENT_CACHE_LOADED = True
+    solver_module._PROFILE_INCUMBENT_CACHE[cache_key] = {"1:1": dict(assignments)}
 
 
 def test_solver_can_still_respect_explicit_hard_language_profiles() -> None:
@@ -468,6 +484,82 @@ def test_profile_slack_dominance_never_self_sources() -> None:
 
     assert updated["D F/L +1"].dominance_source is None
     assert updated["D F/L +1"].solution_source != "carried_from:D F/L +1"
+
+
+def test_incumbent_cache_key_changes_when_manual_rule_added() -> None:
+    students, classes, settings = _cache_fixture()
+    base_key = solver_module._profile_incumbent_cache_key(students, classes, settings, [])
+    rule_key = solver_module._profile_incumbent_cache_key(
+        students,
+        classes,
+        settings,
+        [ManualRule("SEPARATE", "s1", "s2")],
+    )
+
+    assert rule_key != base_key
+
+
+def test_incumbent_cache_key_changes_when_settings_change() -> None:
+    students, classes, settings = _cache_fixture()
+    base_key = solver_module._profile_incumbent_cache_key(students, classes, settings, [])
+    changed_key = solver_module._profile_incumbent_cache_key(
+        students,
+        classes,
+        replace(settings, weight_friend1=settings.weight_friend1 + 1),
+        [],
+    )
+
+    assert changed_key != base_key
+
+
+def test_cached_candidate_is_not_used_after_manual_rule_change() -> None:
+    students, classes, settings = _cache_fixture()
+    assignments = {"s1": "5a", "s2": "5a"}
+    base_key = solver_module._profile_incumbent_cache_key(students, classes, settings, [])
+    rule = ManualRule("SEPARATE", "s1", "s2")
+    changed_key = solver_module._profile_incumbent_cache_key(students, classes, settings, [rule])
+
+    _seed_incumbent_cache(base_key, assignments)
+
+    cached = solver_module._cached_profile_candidate(
+        changed_key,
+        "E beide +1",
+        1,
+        1,
+        students,
+        classes,
+        settings,
+        [rule],
+    )
+
+    assert cached is None
+
+
+def test_cached_candidate_is_not_used_after_class_size_policy_change() -> None:
+    students, classes, settings = _cache_fixture()
+    assignments = {"s1": "5a", "s2": "5a"}
+    base_key = solver_module._profile_incumbent_cache_key(students, classes, settings, [])
+    policy = ClassSizePolicy(target_size=1, comfort_tolerance=0, hard_tolerance=1, soft_weight=10)
+    changed_classes = [
+        replace(config, size_policy=policy)
+        for config in classes
+    ]
+    changed_key = solver_module._profile_incumbent_cache_key(students, changed_classes, settings, [])
+
+    _seed_incumbent_cache(base_key, assignments)
+
+    cached = solver_module._cached_profile_candidate(
+        changed_key,
+        "E beide +1",
+        1,
+        1,
+        students,
+        changed_classes,
+        settings,
+        [],
+    )
+
+    assert cached is None
 
 
 def test_phase_reports_keep_fixed_metrics_monotonic() -> None:
