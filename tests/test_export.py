@@ -499,6 +499,116 @@ def test_export_includes_reoptimized_solution_source() -> None:
     assert workbook["Manuelle Änderungen"]["E2"].value == "ja"
 
 
+def test_export_reoptimized_provenance_lists_rules_moves_fixations_and_notes() -> None:
+    students = [
+        _student(1, "F", "B", note_text="nicht mit V2 zusammen"),
+        _student(2, "F", "B"),
+        _student(3, "L", "S", note_text="nur als Hinweis prüfen"),
+    ]
+    class_configs = [
+        ClassConfig("5a", "5a", 0, 3, [], []),
+        ClassConfig("5b", "5b", 0, 3, [], []),
+    ]
+    assignments = {"s1": "5a", "s2": "5b", "s3": "5b"}
+    settings = load_settings()
+    score = score_solution(students, assignments, settings, class_configs)
+    candidate = ProfileSlackReport(
+        variant="E beide +1",
+        language_mixed_limit=2,
+        music_mixed_limit=2,
+        status="FEASIBLE",
+        isolated_friend_request_count=score.isolated_friend_request_count,
+        friend1_fulfilled=score.friend1_fulfilled,
+        friend1_total=score.friend1_total,
+        mutual_friend_fulfilled=score.mutual_friend_fulfilled,
+        mutual_friend_total=score.mutual_friend_total,
+        friend2_fulfilled=score.friend2_fulfilled,
+        friend2_total=score.friend2_total,
+        mixed_language_class_count=score.mixed_language_class_count,
+        mixed_music_class_count=score.mixed_music_class_count,
+        language_minority_student_count=score.language_minority_student_count,
+        music_minority_student_count=score.music_minority_student_count,
+        review_candidate=True,
+        social_limit_met=True,
+        assignments=assignments,
+    )
+    converted_rule = create_manual_rule_entry(
+        ManualRule("SEPARATE", "s1", "s2"),
+        source="note",
+        note_student_id="s1",
+    )
+    disabled_rule = create_manual_rule_entry(
+        ManualRule("TOGETHER", "s1", "s2"),
+        source="manual",
+        active=False,
+    )
+    note_statuses = {
+        "s1": NoteReviewStatus.CONVERTED_TO_RULE,
+        "s3": NoteReviewStatus.KEPT_AS_NOTE,
+    }
+    summary = candidate_summary_from_report(candidate, len(students))
+    draft = create_assignment_draft(summary, manual_rule_entries=[converted_rule, disabled_rule])
+    move = ManualMove("s3", "5b", "5a", lock_after_move=True, reason="pädagogisch fixiert")
+    impact = move_impact(draft, move, summary, students, class_configs, settings)
+    fixed_draft = apply_move(draft, move, students=students, class_configs=class_configs)
+    report = reoptimize_with_manual_fixations(
+        fixed_draft,
+        students,
+        class_configs,
+        settings,
+        base_candidate_name="E: E beide +1",
+        manual_move_impacts=[impact],
+    )
+
+    exported = export_excel(
+        None,
+        students,
+        report.solver_result.assignments,
+        class_configs,
+        report.after_score,
+        [],
+        profile_slack_reports=[candidate],
+        manual_rule_entries=[converted_rule, disabled_rule],
+        note_review_status_by_student=note_statuses,
+        manual_moves=report.manual_moves,
+        manual_move_impacts=report.manual_move_impacts,
+        base_candidate_name=report.base_candidate_name,
+        reoptimization_report=report,
+        settings=settings,
+    )
+    workbook = load_workbook(io.BytesIO(exported))
+    overview = _overview_values(workbook)
+
+    assert overview["Basis-Kandidat"] == "E: E beide +1"
+    assert overview["Lösungsstand"] == "neu optimierte Lösung mit Fixierungen"
+    assert overview["Neuoptimierung"] == "durchgeführt"
+    assert overview["Manuell verändert"] == "ja"
+    assert overview["Anzahl manueller Moves"] == 1
+    assert overview["Anzahl Draft-Fixierungen"] == 1
+    assert overview["Anzahl aktiver Regeln"] == 1
+    assert overview["Anzahl deaktivierter Regeln"] == 1
+    assert overview["Anzahl ungeprüfter Notizen"] == 0
+
+    assert workbook["Manuelle Regeln"]["A2"].value == "aktiv"
+    assert workbook["Manuelle Regeln"]["F2"].value == "ja"
+    assert workbook["Manuelle Regeln"]["G2"].value == "in Regel umgewandelt"
+    assert workbook["Manuelle Regeln"]["A3"].value == "deaktiviert"
+
+    note_rows = {
+        row[0]: row
+        for row in workbook["Notizen"].iter_rows(min_row=2, values_only=True)
+    }
+    assert note_rows["1 - V1 N1"][2] == "in Regel umgewandelt"
+    assert note_rows["1 - V1 N1"][4].startswith("Trennen:")
+    assert note_rows["3 - V3 N3"][2] == "als Hinweis behalten"
+    assert note_rows["3 - V3 N3"][4] in {"", None}
+
+    assert workbook["Manuelle Änderungen"]["E2"].value == "ja"
+    assert workbook["Manuelle Änderungen"]["F2"].value == "pädagogisch fixiert"
+    assert workbook["Manuelle Änderungen"]["G1"].value == "Delta ohne Wunschfreund"
+    assert workbook["Manuelle Änderungen"]["M1"].value == "Blocker"
+
+
 def _manual_export_workbook(*, lock_move: bool = False):
     students = [
         _student(1, "F", "B", friend1="2"),
