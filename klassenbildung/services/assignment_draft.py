@@ -6,6 +6,11 @@ from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSett
 from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.presentation.candidate_review import ReviewWarning, ReviewWarningLevel
 from klassenbildung.presentation.result_view_model import CandidateSummary
+from klassenbildung.services.manual_rules import ManualRuleEntry, active_manual_rules
+
+
+class AssignmentDraftError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -14,6 +19,7 @@ class ManualMove:
     from_class_id: str
     to_class_id: str
     lock_after_move: bool = False
+    override_locked: bool = False
     reason: str | None = None
 
 
@@ -53,20 +59,32 @@ def create_assignment_draft(
     base_summary: CandidateSummary,
     *,
     manual_rules: list[ManualRule] | None = None,
+    manual_rule_entries: list[ManualRuleEntry] | None = None,
 ) -> AssignmentDraft:
+    active_rules = list(manual_rules or [])
+    if manual_rule_entries is not None:
+        active_rules.extend(active_manual_rules(manual_rule_entries))
     return AssignmentDraft(
         base_candidate_key=base_summary.key,
         base_assignments=dict(base_summary.assignments),
         current_assignments=dict(base_summary.assignments),
-        manual_rules=list(manual_rules or []),
-        locked_students=set(),
+        manual_rules=active_rules,
+        locked_students={rule.student_a for rule in active_rules if rule.type == "FIX_CLASS"},
         moves=[],
     )
 
 
-def apply_move(draft: AssignmentDraft, move: ManualMove) -> AssignmentDraft:
+def apply_move(
+    draft: AssignmentDraft,
+    move: ManualMove,
+    *,
+    students: list[Student] | None = None,
+    class_configs: list[ClassConfig] | None = None,
+) -> AssignmentDraft:
+    _validate_move(draft, move, students=students, class_configs=class_configs)
     assignments = dict(draft.current_assignments)
     assignments[move.student_id] = move.to_class_id
+    _validate_assignment_keys(draft, assignments)
     manual_rules = list(draft.manual_rules)
     locked_students = set(draft.locked_students)
     if move.lock_after_move:
@@ -84,21 +102,25 @@ def apply_move(draft: AssignmentDraft, move: ManualMove) -> AssignmentDraft:
 def revert_last_move(draft: AssignmentDraft) -> AssignmentDraft:
     if not draft.moves:
         return draft
-    remaining_moves = draft.moves[:-1]
-    assignments = dict(draft.base_assignments)
-    manual_rules = [rule for rule in draft.manual_rules if rule.type != "FIX_CLASS" or rule.student_a not in draft.locked_students]
-    locked_students: set[str] = set()
-    for move in remaining_moves:
-        assignments[move.student_id] = move.to_class_id
-        if move.lock_after_move:
-            manual_rules.append(ManualRule("FIX_CLASS", move.student_id, class_id=move.to_class_id))
-            locked_students.add(move.student_id)
+    last_move = draft.moves[-1]
+    assignments = dict(draft.current_assignments)
+    assignments[last_move.student_id] = last_move.from_class_id
+    manual_rules = list(draft.manual_rules)
+    locked_students = set(draft.locked_students)
+    if last_move.lock_after_move:
+        last_rule = ManualRule("FIX_CLASS", last_move.student_id, class_id=last_move.to_class_id)
+        for index in range(len(manual_rules) - 1, -1, -1):
+            if manual_rules[index] == last_rule:
+                del manual_rules[index]
+                break
+        if not any(rule.type == "FIX_CLASS" and rule.student_a == last_move.student_id for rule in manual_rules):
+            locked_students.discard(last_move.student_id)
     return replace(
         draft,
         current_assignments=assignments,
         manual_rules=manual_rules,
         locked_students=locked_students,
-        moves=list(remaining_moves),
+        moves=list(draft.moves[:-1]),
     )
 
 
@@ -120,7 +142,7 @@ def move_impact(
     settings: OptimizationSettings,
 ) -> MoveImpact:
     before_score = score_solution(students, draft.current_assignments, settings, class_configs, draft.manual_rules)
-    after_draft = apply_move(draft, move)
+    after_draft = apply_move(draft, move, students=students, class_configs=class_configs)
     after_score = score_solution(students, after_draft.current_assignments, settings, class_configs, after_draft.manual_rules)
     before_summary = _summary_from_score(base_summary, draft.current_assignments, before_score, len(students))
     after_summary = _summary_from_score(base_summary, after_draft.current_assignments, after_score, len(students))
@@ -184,3 +206,33 @@ def _student_has_manual_note(student: object) -> bool:
     if note_text is None:
         note_text = getattr(student, "comment", None)
     return bool(note_text and note_text.strip())
+
+
+def _validate_move(
+    draft: AssignmentDraft,
+    move: ManualMove,
+    *,
+    students: list[Student] | None,
+    class_configs: list[ClassConfig] | None,
+) -> None:
+    if students is not None and move.student_id not in {student.internal_id for student in students}:
+        raise AssignmentDraftError(f"Unbekannter Schüler: {move.student_id}")
+    if move.student_id not in draft.current_assignments:
+        raise AssignmentDraftError(f"Unbekannter Schüler im Draft: {move.student_id}")
+    if draft.current_assignments[move.student_id] != move.from_class_id:
+        raise AssignmentDraftError(
+            f"{move.student_id} ist nicht mehr in {move.from_class_id}, sondern in {draft.current_assignments[move.student_id]}"
+        )
+    if class_configs is not None:
+        class_ids = {config.class_id for config in class_configs}
+        if move.from_class_id not in class_ids:
+            raise AssignmentDraftError(f"Unbekannte Ausgangsklasse: {move.from_class_id}")
+        if move.to_class_id not in class_ids:
+            raise AssignmentDraftError(f"Unbekannte Zielklasse: {move.to_class_id}")
+    if move.student_id in draft.locked_students and not move.override_locked and move.from_class_id != move.to_class_id:
+        raise AssignmentDraftError("Fixierter Schüler kann ohne Override nicht verschoben werden.")
+
+
+def _validate_assignment_keys(draft: AssignmentDraft, assignments: dict[str, str]) -> None:
+    if set(assignments) != set(draft.base_assignments):
+        raise AssignmentDraftError("Draft-Zuweisungen müssen genau dieselben Schüler enthalten.")
