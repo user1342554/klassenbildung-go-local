@@ -5,6 +5,8 @@ import io as py_io
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
+import klassenbildung.presentation.candidate_review as candidate_review_module
+import klassenbildung.presentation.candidate_summary as candidate_summary_module
 from klassenbildung.core.constants import BASIS_SHEET_NAME, EXPORT_COLUMN_COUNT
 from klassenbildung.core.models import (
     ClassConfig,
@@ -16,14 +18,6 @@ from klassenbildung.core.models import (
     ValidationMessage,
 )
 from klassenbildung.core.settings import load_settings
-from klassenbildung.presentation.candidate_summary import (
-    CANDIDATE_SUMMARY_FIELDS,
-    candidate_summary_records_from_reports,
-)
-from klassenbildung.presentation.candidate_review import (
-    CandidateReviewModel,
-    candidate_review_models_from_reports,
-)
 
 
 def export_excel(
@@ -258,15 +252,15 @@ def _write_candidate_summary_sheet(
 ) -> None:
     if "Kandidaten" in workbook.sheetnames:
         del workbook["Kandidaten"]
-    records = candidate_summary_records_from_reports(profile_slack_reports, student_count)
+    records = candidate_summary_module.candidate_summary_records_from_reports(profile_slack_reports, student_count)
     if not records:
         return
     sheet = workbook.create_sheet("Kandidaten")
-    sheet.append(CANDIDATE_SUMMARY_FIELDS)
+    sheet.append(candidate_summary_module.CANDIDATE_SUMMARY_FIELDS)
     for cell in sheet[1]:
         cell.font = Font(bold=True)
     for record in records:
-        sheet.append([record.get(field) for field in CANDIDATE_SUMMARY_FIELDS])
+        sheet.append([record.get(field) for field in candidate_summary_module.CANDIDATE_SUMMARY_FIELDS])
 
 
 def _write_profile_variant_rows(sheet, title: str, reports: list[ProfileSlackReport]) -> None:
@@ -348,7 +342,7 @@ def _write_candidate_detail_sheet(
     profile_slack_reports: list[ProfileSlackReport],
     settings: OptimizationSettings,
 ) -> None:
-    reviews = candidate_review_models_from_reports(profile_slack_reports, students, class_configs, settings)
+    reviews = candidate_review_module.candidate_review_models_from_reports(profile_slack_reports, students, class_configs, settings)
     if not reviews:
         return
     if "Kandidaten-Details" in workbook.sheetnames:
@@ -373,7 +367,7 @@ def _write_candidate_detail_sheet(
         _append_review_details(sheet, review)
 
 
-def _append_review_details(sheet, review: CandidateReviewModel) -> None:
+def _append_review_details(sheet, review) -> None:
     variant = review.summary.name
     for row in review.students_without_wishfriend:
         detail = "; ".join(

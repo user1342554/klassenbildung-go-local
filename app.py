@@ -13,6 +13,8 @@ import streamlit as st
 import klassenbildung.core.models as core_models_module
 import klassenbildung.core.settings as core_settings_module
 import klassenbildung.excel_io.excel_export as excel_export_module
+import klassenbildung.presentation.candidate_review as candidate_review_module
+import klassenbildung.presentation.candidate_summary as candidate_summary_module
 from klassenbildung.core.constants import DEFAULT_WEIGHTS
 from klassenbildung.core.models import (
     ClassConfig,
@@ -33,11 +35,6 @@ from klassenbildung.excel_io.excel_export import export_excel
 from klassenbildung.excel_io.excel_import import import_excel
 from klassenbildung.optimization.scoring import resolve_student_ref, score_solution
 from klassenbildung.optimization.solver import clear_profile_incumbent_cache, solve_assignments
-from klassenbildung.presentation.candidate_summary import candidate_summary_records
-from klassenbildung.presentation.candidate_review import (
-    build_candidate_review_model,
-    candidate_review_records,
-)
 from klassenbildung.presentation.wording import (
     candidate_tradeoff_text as summary_tradeoff_text,
     candidate_warning_lines as summary_warning_lines,
@@ -64,13 +61,20 @@ def _reload_stale_project_modules() -> None:
     global coerce_settings, generate_class_configs, load_class_configs, load_settings
     global save_class_configs, save_settings
     global export_excel
+    global candidate_review_module, candidate_summary_module
 
     stale_core = "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
+    stale_summary = not hasattr(candidate_summary_module, "candidate_summary_records")
+    stale_review = (
+        not hasattr(candidate_review_module, "build_candidate_review_model")
+        or not hasattr(candidate_review_module, "candidate_review_records")
+        or not hasattr(candidate_review_module, "ReviewReadiness")
+    )
     stale_export = (
         "include_expert_diagnostics" not in inspect.signature(export_excel).parameters
         or not hasattr(excel_export_module, "_write_candidate_summary_sheet")
     )
-    if not stale_core and not stale_export:
+    if not stale_core and not stale_summary and not stale_review and not stale_export:
         return
 
     if stale_core:
@@ -89,7 +93,13 @@ def _reload_stale_project_modules() -> None:
         save_class_configs = reloaded_settings.save_class_configs
         save_settings = reloaded_settings.save_settings
 
-    if stale_export:
+    if stale_summary:
+        candidate_summary_module = importlib.reload(candidate_summary_module)
+
+    if stale_review:
+        candidate_review_module = importlib.reload(candidate_review_module)
+
+    if stale_export or stale_summary or stale_review:
         export_excel = importlib.reload(excel_export_module).export_excel
 
 
@@ -989,8 +999,8 @@ def _solver_debug_payload(
         "fl_preserving_candidate": _fl_conservative_candidate(solver_result).variant if _fl_conservative_candidate(solver_result) else None,
         "strict_variant_role": "diagnostic_only" if solver_result.profile_slack_reports else None,
         "review_candidates_available": bool(_review_candidates(solver_result)),
-        "candidate_summaries": candidate_summary_records(solver_result, student_count),
-        "candidate_reviews": candidate_review_records(solver_result, students, class_configs, settings),
+        "candidate_summaries": candidate_summary_module.candidate_summary_records(solver_result, student_count),
+        "candidate_reviews": candidate_review_module.candidate_review_records(solver_result, students, class_configs, settings),
         "score": score.total_score,
     }
 
@@ -1811,7 +1821,7 @@ def _render_candidate_review(
     if not summary.assignments:
         st.info("Für diesen Kandidaten liegt keine Klassenzuweisung zur Detailprüfung vor.")
         return
-    review = build_candidate_review_model(summary, students, class_configs, settings)
+    review = candidate_review_module.build_candidate_review_model(summary, students, class_configs, settings)
 
     cols = st.columns(6)
     cols[0].metric("Ohne Wunschfreund", summary.without_wishfriend)
