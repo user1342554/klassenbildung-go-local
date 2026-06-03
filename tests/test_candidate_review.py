@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from klassenbildung.core.models import ClassConfig, OptimizationSettings, ProfileSlackReport, SolverResult, Student
+from klassenbildung.core.models import (
+    ClassConfig,
+    ClassSizePolicy,
+    OptimizationSettings,
+    ProfileSlackReport,
+    SolverResult,
+    Student,
+)
 from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.presentation.candidate_review import (
     ReviewReadiness,
@@ -8,6 +15,8 @@ from klassenbildung.presentation.candidate_review import (
     build_candidate_review_model,
     build_candidate_review_models,
     candidate_review_records,
+    review_readiness_text,
+    review_warning_messages,
 )
 from klassenbildung.presentation.standard_result_view import STANDARD_MODE_FORBIDDEN_SOLVER_JARGON
 from klassenbildung.services.candidate_selection import review_candidates
@@ -80,7 +89,7 @@ def test_candidate_review_records_are_json_ready_for_all_review_candidates() -> 
 def test_candidate_review_warning_levels_and_readiness() -> None:
     review = _review()
 
-    assert review.readiness == ReviewReadiness.READY_FOR_REVIEW
+    assert review.readiness == ReviewReadiness.NEEDS_ATTENTION
     assert any(warning.level == ReviewWarningLevel.WARNING for warning in review.warnings)
     assert any(warning.level == ReviewWarningLevel.INFO for warning in review.warnings)
     assert review.blocker_count == 0
@@ -100,6 +109,49 @@ def test_candidate_review_with_hard_violation_is_blocked() -> None:
 
     assert review.readiness == ReviewReadiness.BLOCKED
     assert review.blocker_count >= 1
+    assert review_warning_messages(review, ReviewWarningLevel.BLOCKER)
+
+
+def test_review_readiness_texts_are_user_facing() -> None:
+    assert review_readiness_text(ReviewReadiness.READY_FOR_REVIEW) == "Bereit zur pädagogischen Prüfung"
+    assert review_readiness_text(ReviewReadiness.NEEDS_ATTENTION) == "Prüfen, enthält Warnungen"
+    assert review_readiness_text(ReviewReadiness.BLOCKED) == "Nicht verwendbar, Blocker vorhanden"
+
+
+def test_review_warning_levels_classify_gap_as_info_not_blocker() -> None:
+    review = _review_without_warning_but_unreliable_gap()
+
+    assert review.readiness == ReviewReadiness.READY_FOR_REVIEW
+    assert review.info_count >= 1
+    assert review.warning_count == 0
+    assert review.blocker_count == 0
+
+
+def test_review_warning_levels_classify_comfort_size_deviation_as_warning() -> None:
+    students = [_student(1, "F", "B"), _student(2, "F", "B"), _student(3, "F", "B")]
+    class_configs = [
+        ClassConfig(
+            "5a",
+            "5a",
+            1,
+            4,
+            [],
+            [],
+            size_policy=ClassSizePolicy(target_size=2, comfort_tolerance=0, hard_tolerance=1, soft_weight=1),
+        )
+    ]
+    assignments = {"s1": "5a", "s2": "5a", "s3": "5a"}
+    settings = OptimizationSettings()
+    score = score_solution(students, assignments, settings, class_configs)
+    candidate = _candidate_from_score("E beide +1", assignments, score, gap_reliable=True)
+    solver_result = SolverResult("FEASIBLE", assignments, profile_slack_reports=[candidate])
+    summary = review_candidates(solver_result, len(students))[0]
+
+    review = build_candidate_review_model(summary, students, class_configs, settings)
+
+    assert review.readiness == ReviewReadiness.NEEDS_ATTENTION
+    assert any("Komfortbereich" in warning.message for warning in review.warnings)
+    assert review.blocker_count == 0
 
 
 def _review():
@@ -124,6 +176,18 @@ def _review():
     candidate = ProfileSlackReport(
         **_candidate_kwargs("E beide +1", assignments, score)
     )
+    solver_result = SolverResult("FEASIBLE", assignments, profile_slack_reports=[candidate])
+    summary = review_candidates(solver_result, len(students))[0]
+    return build_candidate_review_model(summary, students, class_configs, settings)
+
+
+def _review_without_warning_but_unreliable_gap():
+    students = [_student(1, "F", "B"), _student(2, "F", "B")]
+    class_configs = [ClassConfig("5a", "5a", 0, 2, [], [])]
+    assignments = {"s1": "5a", "s2": "5a"}
+    settings = OptimizationSettings()
+    score = score_solution(students, assignments, settings, class_configs)
+    candidate = _candidate_from_score("E beide +1", assignments, score, gap_reliable=False)
     solver_result = SolverResult("FEASIBLE", assignments, profile_slack_reports=[candidate])
     summary = review_candidates(solver_result, len(students))[0]
     return build_candidate_review_model(summary, students, class_configs, settings)
@@ -158,11 +222,23 @@ def _multi_candidate_fixture():
     return solver_result, students, class_configs, settings
 
 
-def _candidate_from_score(variant: str, assignments: dict[str, str], score) -> ProfileSlackReport:
-    return ProfileSlackReport(**_candidate_kwargs(variant, assignments, score))
+def _candidate_from_score(
+    variant: str,
+    assignments: dict[str, str],
+    score,
+    *,
+    gap_reliable: bool | None = None,
+) -> ProfileSlackReport:
+    return ProfileSlackReport(**_candidate_kwargs(variant, assignments, score, gap_reliable=gap_reliable))
 
 
-def _candidate_kwargs(variant: str, assignments: dict[str, str], score) -> dict:
+def _candidate_kwargs(
+    variant: str,
+    assignments: dict[str, str],
+    score,
+    *,
+    gap_reliable: bool | None = None,
+) -> dict:
     return {
         "variant": variant,
         "language_mixed_limit": 2,
@@ -181,6 +257,7 @@ def _candidate_kwargs(variant: str, assignments: dict[str, str], score) -> dict:
         "mutual_friend_total": score.mutual_friend_total,
         "review_candidate": True,
         "social_limit_met": True,
+        "gap_reliable": gap_reliable,
         "assignments": assignments,
     }
 

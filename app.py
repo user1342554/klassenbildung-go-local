@@ -69,6 +69,7 @@ def _reload_stale_project_modules() -> None:
         not hasattr(candidate_review_module, "build_candidate_review_model")
         or not hasattr(candidate_review_module, "candidate_review_records")
         or not hasattr(candidate_review_module, "ReviewReadiness")
+        or not hasattr(candidate_review_module, "review_readiness_text")
     )
     stale_export = (
         "include_expert_diagnostics" not in inspect.signature(export_excel).parameters
@@ -1823,46 +1824,83 @@ def _render_candidate_review(
         return
     review = candidate_review_module.build_candidate_review_model(summary, students, class_configs, settings)
 
+    st.markdown(f"**{label_by_key.get(summary.key, summary.key)}**")
+    readiness_text = candidate_review_module.review_readiness_text(review.readiness)
+    if review.readiness == candidate_review_module.ReviewReadiness.BLOCKED:
+        st.error(readiness_text)
+    elif review.readiness == candidate_review_module.ReviewReadiness.NEEDS_ATTENTION:
+        st.warning(readiness_text)
+    else:
+        st.success(readiness_text)
+
     cols = st.columns(6)
     cols[0].metric("Ohne Wunschfreund", summary.without_wishfriend)
     cols[1].metric("Freund 1", _ratio_text(summary.friend1_satisfied, summary.friend1_total))
     cols[2].metric("Gegenseitig", _ratio_text(summary.mutual_satisfied, summary.mutual_total))
     cols[3].metric("F/L", f"{summary.fl_mixed_actual}/{summary.fl_mixed_allowed}")
     cols[4].metric("Musik", f"{summary.music_mixed_actual}/{summary.music_mixed_allowed}")
-    cols[5].metric("Notizen", sum(1 for student in students if student_has_manual_note(student)))
+    cols[5].metric("Notizen", len(review.students_with_manual_notes))
     st.caption(summary_tradeoff_text(summary, candidate_summaries(solver_result, student_count)))
     if review.warnings:
-        st.caption(
-            f"{review.blocker_count} Blocker · {review.warning_count} Warnungen · {review.info_count} Hinweise"
+        st.caption(candidate_review_module.review_warning_count_text(review))
+        blocker_messages = candidate_review_module.review_warning_messages(
+            review, candidate_review_module.ReviewWarningLevel.BLOCKER
         )
-        warning_messages = [warning.message for warning in review.warnings if warning.level == "warning"]
+        warning_messages = candidate_review_module.review_warning_messages(
+            review, candidate_review_module.ReviewWarningLevel.WARNING
+        )
+        info_messages = candidate_review_module.review_warning_messages(
+            review, candidate_review_module.ReviewWarningLevel.INFO
+        )
+        if blocker_messages:
+            st.error(" ".join(blocker_messages))
         if warning_messages:
             st.warning(" ".join(warning_messages))
+        if info_messages:
+            st.info(" ".join(info_messages))
 
-    tab_a, tab_b, tab_c = st.tabs(["Härtefälle", "Mischklassen", "Klassenübersicht"])
+    tab_a, tab_b, tab_c, tab_d, tab_e, tab_f = st.tabs(
+        [
+            "Kinder ohne Wunschfreund",
+            "Gegenseitige Freunde",
+            "Manuelle Notizen",
+            "F/L-Mischklassen",
+            "Musik-Mischklassen",
+            "Klassenbelastung",
+        ]
+    )
     with tab_a:
         isolated_frame = _review_student_risk_frame(review.students_without_wishfriend)
-        mutual_frame = _review_friendship_risk_frame(review.separated_mutual_friendships)
-        note_frame = _review_note_frame(review.students_with_manual_notes)
         if isolated_frame.empty:
             st.success("Kein Kind ist ohne Wunschfreund.")
         else:
-            st.markdown("**Kinder ohne Wunschfreund**")
             st.dataframe(isolated_frame, width="stretch", hide_index=True)
-        if not mutual_frame.empty:
-            st.markdown("**Getrennte gegenseitige Freundschaften**")
+    with tab_b:
+        mutual_frame = _review_friendship_risk_frame(review.separated_mutual_friendships)
+        if mutual_frame.empty:
+            st.success("Keine getrennten gegenseitigen Freundschaften.")
+        else:
             st.dataframe(mutual_frame, width="stretch", hide_index=True)
-        if not note_frame.empty:
-            st.markdown("**Kinder mit manueller Notiz**")
+    with tab_c:
+        note_frame = _review_note_frame(review.students_with_manual_notes)
+        if note_frame.empty:
+            st.success("Keine manuellen Notizen in diesem Kandidaten.")
+        else:
             st.caption("Diese Notizen wurden nicht automatisch verstanden. Bitte manuell prüfen oder in harte Regeln umwandeln.")
             st.dataframe(note_frame, width="stretch", hide_index=True)
-    with tab_b:
-        mixed_frame = _review_mixed_class_frame(review.fl_mixed_classes + review.music_mixed_classes)
-        if mixed_frame.empty:
-            st.success("Keine Profil-Mischklassen in diesem Kandidaten.")
+    with tab_d:
+        fl_frame = _review_mixed_class_frame(review.fl_mixed_classes)
+        if fl_frame.empty:
+            st.success("Keine F/L-Mischklassen in diesem Kandidaten.")
         else:
-            st.dataframe(mixed_frame, width="stretch", hide_index=True)
-    with tab_c:
+            st.dataframe(fl_frame, width="stretch", hide_index=True)
+    with tab_e:
+        music_frame = _review_mixed_class_frame(review.music_mixed_classes)
+        if music_frame.empty:
+            st.success("Keine Musik-Mischklassen in diesem Kandidaten.")
+        else:
+            st.dataframe(music_frame, width="stretch", hide_index=True)
+    with tab_f:
         st.dataframe(_review_class_load_frame(review.class_load_rows), width="stretch", hide_index=True)
 
 

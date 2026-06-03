@@ -124,6 +124,7 @@ class CandidateReviewModel:
     def visible_text(self) -> str:
         parts = [
             self.summary.key,
+            review_readiness_text(self.readiness),
             str(self.summary.without_wishfriend),
             f"{self.summary.friend1_satisfied}/{self.summary.friend1_total}",
             f"{self.summary.mutual_satisfied}/{self.summary.mutual_total}",
@@ -148,6 +149,22 @@ class CandidateReviewModel:
         return "\n".join(parts)
 
 
+def review_readiness_text(readiness: ReviewReadiness) -> str:
+    return {
+        ReviewReadiness.READY_FOR_REVIEW: "Bereit zur pädagogischen Prüfung",
+        ReviewReadiness.NEEDS_ATTENTION: "Prüfen, enthält Warnungen",
+        ReviewReadiness.BLOCKED: "Nicht verwendbar, Blocker vorhanden",
+    }[readiness]
+
+
+def review_warning_count_text(review: CandidateReviewModel) -> str:
+    return f"{review.blocker_count} Blocker · {review.warning_count} Warnungen · {review.info_count} Hinweise"
+
+
+def review_warning_messages(review: CandidateReviewModel, level: ReviewWarningLevel) -> list[str]:
+    return [warning.message for warning in review.warnings if warning.level == level]
+
+
 def build_candidate_review_model(
     summary: CandidateSummary,
     students: list[Student],
@@ -158,27 +175,39 @@ def build_candidate_review_model(
     students_by_class = _students_by_class(students, class_configs, summary.assignments)
     fl_rows = _mixed_class_rows(students_by_class, "language")
     music_rows = _mixed_class_rows(students_by_class, "music")
-    warnings = _review_warnings(summary, score, students)
+    isolated_rows = _students_without_wishfriend(students, summary.assignments)
+    mutual_rows = _separated_mutual_friendships(students, summary.assignments)
+    note_rows = _students_with_manual_notes(students, summary.assignments)
+    class_load_rows = [
+        ClassLoadRow(
+            class_id=report.class_id,
+            size=report.size,
+            support_count=report.support_count,
+            male_count=report.gender_counts.get("m", 0),
+            female_count=report.gender_counts.get("w", 0),
+            largest_school_count=_largest_count(report.school_counts),
+            largest_primary_class_count=_largest_count(report.primary_class_counts),
+        )
+        for report in score.class_reports
+    ]
+    warnings = _review_warnings(
+        summary,
+        score,
+        class_configs,
+        isolated_rows,
+        mutual_rows,
+        note_rows,
+        class_load_rows,
+    )
     return CandidateReviewModel(
         summary=summary,
-        readiness=_review_readiness(summary, score),
-        students_without_wishfriend=_students_without_wishfriend(students, summary.assignments),
-        separated_mutual_friendships=_separated_mutual_friendships(students, summary.assignments),
-        students_with_manual_notes=_students_with_manual_notes(students, summary.assignments),
+        readiness=_review_readiness(summary, warnings),
+        students_without_wishfriend=isolated_rows,
+        separated_mutual_friendships=mutual_rows,
+        students_with_manual_notes=note_rows,
         fl_mixed_classes=fl_rows,
         music_mixed_classes=music_rows,
-        class_load_rows=[
-            ClassLoadRow(
-                class_id=report.class_id,
-                size=report.size,
-                support_count=report.support_count,
-                male_count=report.gender_counts.get("m", 0),
-                female_count=report.gender_counts.get("w", 0),
-                largest_school_count=_largest_count(report.school_counts),
-                largest_primary_class_count=_largest_count(report.primary_class_counts),
-            )
-            for report in score.class_reports
-        ],
+        class_load_rows=class_load_rows,
         warnings=warnings,
     )
 
@@ -201,6 +230,7 @@ def candidate_review_to_record(review: CandidateReviewModel) -> dict[str, object
         "key": review.summary.key,
         "name": review.summary.name,
         "readiness": review.readiness.value,
+        "readiness_text": review_readiness_text(review.readiness),
         "without_wishfriend": len(review.students_without_wishfriend),
         "separated_mutual_friendships": len(review.separated_mutual_friendships),
         "students_with_manual_notes": len(review.students_with_manual_notes),
@@ -362,31 +392,87 @@ def _mixed_class_rows(
     return rows
 
 
-def _review_warnings(summary: CandidateSummary, score, students: list[Student]) -> list[ReviewWarning]:
+def _review_warnings(
+    summary: CandidateSummary,
+    score,
+    class_configs: list[ClassConfig],
+    isolated_rows: list[StudentRiskRow],
+    mutual_rows: list[FriendshipRiskRow],
+    note_rows: list[StudentNoteRow],
+    class_load_rows: list[ClassLoadRow],
+) -> list[ReviewWarning]:
     warnings = []
-    note_count = sum(1 for student in students if student_has_manual_note(student))
+    for violation in score.hard_violations:
+        warnings.append(ReviewWarning(ReviewWarningLevel.BLOCKER, violation))
+    if summary.candidate_for_review and summary.key != "A":
+        warnings.append(ReviewWarning(ReviewWarningLevel.INFO, "Profil-Lockerung nötig."))
     if summary.music_minority >= 30:
         warnings.append(ReviewWarning(ReviewWarningLevel.WARNING, f"Hohe Musik-Minderheit: {summary.music_minority}."))
     if summary.fl_minority >= 20:
         warnings.append(ReviewWarning(ReviewWarningLevel.WARNING, f"Hohe F/L-Minderheit: {summary.fl_minority}."))
-    if note_count:
+    if mutual_rows:
         warnings.append(
             ReviewWarning(
                 ReviewWarningLevel.WARNING,
-                f"{note_count} Schüler mit manueller Notiz. Diese Notizen wurden nicht automatisch ausgewertet.",
+                f"{len(mutual_rows)} getrennte gegenseitige Freundschaften.",
             )
         )
+    isolated_with_note = sum(1 for row in isolated_rows if row.has_manual_note)
+    if isolated_with_note:
+        warnings.append(
+            ReviewWarning(
+                ReviewWarningLevel.WARNING,
+                f"{isolated_with_note} Kinder ohne Wunschfreund haben eine manuelle Notiz.",
+            )
+        )
+    mutual_with_note = sum(1 for row in mutual_rows if row.has_manual_note)
+    if mutual_with_note:
+        warnings.append(
+            ReviewWarning(
+                ReviewWarningLevel.WARNING,
+                f"{mutual_with_note} getrennte gegenseitige Freundschaften enthalten eine manuelle Notiz.",
+            )
+        )
+    if note_rows:
+        warnings.append(
+            ReviewWarning(
+                ReviewWarningLevel.WARNING,
+                f"{len(note_rows)} Schüler mit manueller Notiz. Diese Notizen wurden nicht automatisch ausgewertet.",
+            )
+        )
+    for row in class_load_rows:
+        if row.support_count >= 3:
+            warnings.append(
+                ReviewWarning(
+                    ReviewWarningLevel.WARNING,
+                    f"{row.class_id}: hohe R-/Unterstützungsballung ({row.support_count}).",
+                )
+            )
+    config_by_id = {config.class_id: config for config in class_configs}
+    for row in class_load_rows:
+        policy = getattr(config_by_id.get(row.class_id), "size_policy", None)
+        if not policy:
+            continue
+        if policy.hard_min <= row.size <= policy.hard_max and (
+            row.size < policy.comfort_min or row.size > policy.comfort_max
+        ):
+            warnings.append(
+                ReviewWarning(
+                    ReviewWarningLevel.WARNING,
+                    f"{row.class_id}: Klassengröße außerhalb des Komfortbereichs ({row.size}).",
+                )
+            )
     if not summary.gap_reliable:
         warnings.append(ReviewWarning(ReviewWarningLevel.INFO, "Gültiger Prüfkandidat, aber nicht bewiesen optimal."))
-    for violation in score.hard_violations:
-        warnings.append(ReviewWarning(ReviewWarningLevel.BLOCKER, violation))
     return warnings
 
 
-def _review_readiness(summary: CandidateSummary, score) -> ReviewReadiness:
-    if score.hard_violations:
+def _review_readiness(summary: CandidateSummary, warnings: list[ReviewWarning]) -> ReviewReadiness:
+    if any(warning.level == ReviewWarningLevel.BLOCKER for warning in warnings):
         return ReviewReadiness.BLOCKED
     if not summary.social_threshold_met or not summary.candidate_for_review:
+        return ReviewReadiness.NEEDS_ATTENTION
+    if any(warning.level == ReviewWarningLevel.WARNING for warning in warnings):
         return ReviewReadiness.NEEDS_ATTENTION
     return ReviewReadiness.READY_FOR_REVIEW
 
