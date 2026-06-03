@@ -75,6 +75,7 @@ def _reload_stale_project_modules() -> None:
         not hasattr(assignment_draft_module, "build_candidate_review_for_draft")
         or not hasattr(assignment_draft_module, "move_delta_rows")
     )
+    stale_manual_rules = not hasattr(manual_rules_module, "student_effective_note_text")
     stale_reoptimization = not hasattr(reoptimization_module, "reoptimize_with_manual_fixations")
     stale_review = (
         not hasattr(candidate_review_module, "build_candidate_review_model")
@@ -87,7 +88,15 @@ def _reload_stale_project_modules() -> None:
         or "base_candidate_name" not in inspect.signature(export_excel).parameters
         or not hasattr(excel_export_module, "_write_candidate_summary_sheet")
     )
-    if not stale_core and not stale_summary and not stale_review and not stale_export and not stale_draft and not stale_reoptimization:
+    if (
+        not stale_core
+        and not stale_summary
+        and not stale_review
+        and not stale_export
+        and not stale_draft
+        and not stale_manual_rules
+        and not stale_reoptimization
+    ):
         return
 
     if stale_core:
@@ -118,6 +127,9 @@ def _reload_stale_project_modules() -> None:
 
     if stale_draft:
         assignment_draft_module = importlib.reload(assignment_draft_module)
+
+    if stale_manual_rules:
+        manual_rules_module = importlib.reload(manual_rules_module)
 
     if stale_reoptimization:
         reoptimization_module = importlib.reload(reoptimization_module)

@@ -167,13 +167,20 @@ def student_data_hash(students: list[Student]) -> str:
             "friend1": student.friend1,
             "friend2": student.friend2,
             "support": student.is_support,
-            "note_text": student.note_text,
-            "comment": student.comment,
+            "note_text": student_effective_note_text(student),
+            "comment": getattr(student, "comment", None),
         }
         for student in students
     ]
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def student_effective_note_text(student: object) -> str | None:
+    note_text = getattr(student, "note_text", None)
+    if note_text is not None:
+        return note_text
+    return getattr(student, "comment", None)
 
 
 def _manual_rule_entry_id(rule: ManualRule, source: ManualRuleSource, note_student_id: str | None) -> str:

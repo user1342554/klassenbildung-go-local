@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, Student
 from klassenbildung.services.manual_rules import (
     NoteReviewStatus,
@@ -109,6 +111,30 @@ def test_student_data_hash_changes_only_when_student_data_changes() -> None:
 
     assert student_data_hash(same_students) == student_data_hash(students)
     assert student_data_hash(changed_students) != student_data_hash(students)
+
+
+def test_student_data_hash_accepts_legacy_student_without_note_text() -> None:
+    legacy_student = SimpleNamespace(
+        internal_id="s1",
+        row_number=1,
+        nr="1",
+        school="Grundschule",
+        last_name="N1",
+        first_name="V1",
+        eligibility="GYM",
+        gender="w",
+        second_language="F",
+        music_profile="Reg",
+        primary_class="4a",
+        friend1=None,
+        friend2=None,
+        comment="alte Bemerkung",
+        is_support=False,
+    )
+
+    current_student = _student(1, note_text="alte Bemerkung")
+
+    assert student_data_hash([legacy_student]) == student_data_hash([current_student])
 
 
 def _student(index: int, note_text: str | None = None) -> Student:
