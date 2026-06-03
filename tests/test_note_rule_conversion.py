@@ -72,6 +72,46 @@ def test_note_conversion_requires_explicit_user_selection() -> None:
         convert_note_to_manual_rule(students, "s1", "SEPARATE", confirmed=True)
 
 
+def test_converted_separate_rule_rejects_same_student() -> None:
+    students = [_student(1, note_text="nicht allein")]
+
+    with pytest.raises(NoteRuleConversionError, match="unterschiedliche Schüler"):
+        convert_note_to_manual_rule(
+            students,
+            "s1",
+            "SEPARATE",
+            selected_student_id="s1",
+            confirmed=True,
+        )
+
+
+def test_converted_together_rule_rejects_unknown_student() -> None:
+    students = [_student(1, note_text="mit unbekannt")]
+
+    with pytest.raises(NoteRuleConversionError, match="nicht gefunden"):
+        convert_note_to_manual_rule(
+            students,
+            "s1",
+            "TOGETHER",
+            selected_student_id="s999",
+            confirmed=True,
+        )
+
+
+def test_converted_fix_rule_rejects_unknown_class() -> None:
+    students = [_student(1, note_text="bitte 5x")]
+
+    with pytest.raises(NoteRuleConversionError, match="nicht bekannt"):
+        convert_note_to_manual_rule(
+            students,
+            "s1",
+            "FIX_CLASS",
+            class_id="5x",
+            available_class_ids=["5a", "5b"],
+            confirmed=True,
+        )
+
+
 def test_note_conversion_requires_user_confirmation() -> None:
     students = [_student(1, note_text="nicht mit Max"), _student(2)]
 

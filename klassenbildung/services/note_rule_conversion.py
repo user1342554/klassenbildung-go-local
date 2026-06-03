@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Iterable, Literal
 
 from klassenbildung.core.models import ManualRule
 from klassenbildung.optimization.scoring import resolve_student_ref
@@ -32,6 +32,7 @@ def convert_note_to_manual_rule(
     *,
     selected_student_id: str | None = None,
     class_id: str | None = None,
+    available_class_ids: Iterable[str] | None = None,
     confirmed: bool = False,
 ) -> NoteRuleConversionResult:
     student = _student_with_note(students, student_id)
@@ -55,6 +56,8 @@ def convert_note_to_manual_rule(
     if rule_type == "FIX_CLASS":
         if not class_id:
             raise NoteRuleConversionError("Für eine Klassenfixierung muss eine Zielklasse ausgewählt werden.")
+        if available_class_ids is not None and class_id not in set(available_class_ids):
+            raise NoteRuleConversionError(f"Die Zielklasse {class_id} ist nicht bekannt.")
         return NoteRuleConversionResult(
             student_id=student.internal_id,
             note_text=_student_effective_note_text(student) or "",
