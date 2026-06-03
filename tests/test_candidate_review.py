@@ -19,6 +19,7 @@ from klassenbildung.presentation.candidate_review import (
     review_readiness_text,
     review_warning_messages,
 )
+from klassenbildung.services.manual_rules import NoteReviewStatus
 from klassenbildung.presentation.standard_result_view import STANDARD_MODE_FORBIDDEN_SOLVER_JARGON
 from klassenbildung.services.candidate_selection import review_candidates
 
@@ -52,6 +53,17 @@ def test_candidate_review_includes_manual_note_students() -> None:
 
     assert [row.display_name for row in review.students_with_manual_notes] == ["1 - V1 N1"]
     assert review.students_with_manual_notes[0].automatically_evaluated is False
+    assert review.students_with_manual_notes[0].review_status == NoteReviewStatus.UNREVIEWED
+
+
+def test_candidate_review_marks_converted_and_kept_note_statuses() -> None:
+    review = _review(
+        note_review_status_by_student={
+            "s1": NoteReviewStatus.CONVERTED_TO_RULE,
+        }
+    )
+
+    assert review.students_with_manual_notes[0].review_status == NoteReviewStatus.CONVERTED_TO_RULE
 
 
 def test_candidate_review_has_no_solver_jargon() -> None:
@@ -165,7 +177,7 @@ def test_review_warning_levels_classify_comfort_size_deviation_as_warning() -> N
     assert review.blocker_count == 0
 
 
-def _review():
+def _review(note_review_status_by_student: dict[str, NoteReviewStatus] | None = None):
     students = [
         _student(1, "F", "B", friend1="2", note_text="nicht neben Max setzen"),
         _student(2, "F", "S", friend1="1"),
@@ -189,7 +201,13 @@ def _review():
     )
     solver_result = SolverResult("FEASIBLE", assignments, profile_slack_reports=[candidate])
     summary = review_candidates(solver_result, len(students))[0]
-    return build_candidate_review_model(summary, students, class_configs, settings)
+    return build_candidate_review_model(
+        summary,
+        students,
+        class_configs,
+        settings,
+        note_review_status_by_student=note_review_status_by_student,
+    )
 
 
 def _review_without_warning_but_unreliable_gap():

@@ -17,6 +17,7 @@ from klassenbildung.optimization.scoring import (
 )
 from klassenbildung.presentation.result_view_model import CandidateSummary
 from klassenbildung.services.candidate_selection import review_candidates
+from klassenbildung.services.manual_rules import NoteReviewStatus
 
 
 ProfileType = Literal["language", "music"]
@@ -67,6 +68,7 @@ class StudentNoteRow:
     display_name: str
     class_id: str
     note_text: str
+    review_status: NoteReviewStatus = NoteReviewStatus.UNREVIEWED
     automatically_evaluated: bool = False
 
 
@@ -139,7 +141,7 @@ class CandidateReviewModel:
         for row in self.separated_mutual_friendships:
             parts.extend([row.student_a_name, row.student_b_name, row.note_text or ""])
         for row in self.students_with_manual_notes:
-            parts.extend([row.display_name, row.note_text])
+            parts.extend([row.display_name, row.note_text, row.review_status.value])
         for row in self.fl_mixed_classes + self.music_mixed_classes:
             parts.extend([row.class_id, row.majority_label, row.minority_label, *row.minority_students])
         for row in self.class_load_rows:
@@ -183,6 +185,7 @@ def build_candidate_review_model(
     students: list[Student],
     class_configs: list[ClassConfig],
     settings: OptimizationSettings,
+    note_review_status_by_student: dict[str, NoteReviewStatus] | None = None,
 ) -> CandidateReviewModel:
     score = score_solution(students, summary.assignments, settings, class_configs)
     students_by_class = _students_by_class(students, class_configs, summary.assignments)
@@ -190,7 +193,11 @@ def build_candidate_review_model(
     music_rows = _mixed_class_rows(students_by_class, "music")
     isolated_rows = _students_without_wishfriend(students, summary.assignments)
     mutual_rows = _separated_mutual_friendships(students, summary.assignments)
-    note_rows = _students_with_manual_notes(students, summary.assignments)
+    note_rows = _students_with_manual_notes(
+        students,
+        summary.assignments,
+        note_review_status_by_student or {},
+    )
     class_load_rows = [
         ClassLoadRow(
             class_id=report.class_id,
@@ -247,6 +254,15 @@ def candidate_review_to_record(review: CandidateReviewModel) -> dict[str, object
         "without_wishfriend": len(review.students_without_wishfriend),
         "separated_mutual_friendships": len(review.separated_mutual_friendships),
         "students_with_manual_notes": len(review.students_with_manual_notes),
+        "unreviewed_notes": sum(
+            1 for row in review.students_with_manual_notes if row.review_status == NoteReviewStatus.UNREVIEWED
+        ),
+        "kept_note_hints": sum(
+            1 for row in review.students_with_manual_notes if row.review_status == NoteReviewStatus.KEPT_AS_NOTE
+        ),
+        "converted_note_rules": sum(
+            1 for row in review.students_with_manual_notes if row.review_status == NoteReviewStatus.CONVERTED_TO_RULE
+        ),
         "fl_minority": sum(row.minority_count for row in review.fl_mixed_classes),
         "music_minority": sum(row.minority_count for row in review.music_mixed_classes),
         "class_load_rows": len(review.class_load_rows),
@@ -341,6 +357,7 @@ def _separated_mutual_friendships(
 def _students_with_manual_notes(
     students: list[Student],
     assignments: dict[str, str],
+    note_review_status_by_student: dict[str, NoteReviewStatus],
 ) -> list[StudentNoteRow]:
     return [
         StudentNoteRow(
@@ -348,6 +365,7 @@ def _students_with_manual_notes(
             display_name=student.display_label,
             class_id=assignments.get(student.internal_id) or "-",
             note_text=student_effective_note_text(student) or "",
+            review_status=note_review_status_by_student.get(student.internal_id, NoteReviewStatus.UNREVIEWED),
         )
         for student in sorted(students, key=lambda item: (item.sort_name, item.row_number))
         if student_has_manual_note(student)

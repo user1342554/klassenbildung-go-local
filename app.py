@@ -300,6 +300,13 @@ def _manual_rule_entries():
     return entries
 
 
+def _note_review_status_by_student():
+    return manual_rules_module.note_review_status_by_student(
+        _manual_rule_entries(),
+        set(st.session_state.get("note_hints_kept", set())),
+    )
+
+
 def _store_manual_rule(
     rule: ManualRule,
     *,
@@ -1677,11 +1684,20 @@ def _review_note_frame(rows) -> pd.DataFrame:
                 "Klasse": row.class_id,
                 "Name": row.display_name,
                 "Notiz": row.note_text,
+                "Prüfstatus": _note_review_status_text(row.review_status),
                 "Automatisch ausgewertet": "nein" if not row.automatically_evaluated else "ja",
             }
             for row in rows
         ]
     )
+
+
+def _note_review_status_text(status) -> str:
+    if status == manual_rules_module.NoteReviewStatus.CONVERTED_TO_RULE:
+        return "in Regel umgewandelt"
+    if status == manual_rules_module.NoteReviewStatus.KEPT_AS_NOTE:
+        return "als Hinweis behalten"
+    return "noch ungeprüft"
 
 
 def _review_mixed_class_frame(rows) -> pd.DataFrame:
@@ -2037,7 +2053,13 @@ def _render_candidate_review(
     if not summary.assignments:
         st.info("Für diesen Kandidaten liegt keine Klassenzuweisung zur Detailprüfung vor.")
         return
-    review = candidate_review_module.build_candidate_review_model(summary, students, class_configs, settings)
+    review = candidate_review_module.build_candidate_review_model(
+        summary,
+        students,
+        class_configs,
+        settings,
+        note_review_status_by_student=_note_review_status_by_student(),
+    )
 
     st.markdown(f"**{label_by_key.get(summary.key, summary.key)}**")
     readiness_text = candidate_review_module.review_readiness_text(review.readiness)
@@ -2097,13 +2119,28 @@ def _render_candidate_review(
         else:
             st.dataframe(mutual_frame, width="stretch", hide_index=True)
     with tab_c:
-        note_frame = _review_note_frame(review.students_with_manual_notes)
-        if note_frame.empty:
+        note_rows = review.students_with_manual_notes
+        if not note_rows:
             st.success("Keine manuellen Notizen in diesem Kandidaten.")
         else:
             st.caption("Diese Notizen wurden nicht automatisch verstanden. Bitte manuell prüfen oder in harte Regeln umwandeln.")
-            st.dataframe(note_frame, width="stretch", hide_index=True)
-            _render_note_rule_controls(review.students_with_manual_notes, students, class_configs, settings, key_suffix)
+            unreviewed_rows = [
+                row for row in note_rows if row.review_status == manual_rules_module.NoteReviewStatus.UNREVIEWED
+            ]
+            kept_rows = [
+                row for row in note_rows if row.review_status == manual_rules_module.NoteReviewStatus.KEPT_AS_NOTE
+            ]
+            converted_rows = [
+                row for row in note_rows if row.review_status == manual_rules_module.NoteReviewStatus.CONVERTED_TO_RULE
+            ]
+            st.caption(
+                f"{len(unreviewed_rows)} ungeprüft · {len(kept_rows)} als Hinweis behalten · "
+                f"{len(converted_rows)} in Regeln umgewandelt"
+            )
+            _render_note_status_frame("Nicht ausgewertete Notizen", unreviewed_rows)
+            _render_note_status_frame("Als Hinweis behalten", kept_rows)
+            _render_note_status_frame("In Regeln umgewandelte Notizen", converted_rows)
+            _render_note_rule_controls(note_rows, students, class_configs, settings, key_suffix)
     with tab_d:
         fl_frame = _review_mixed_class_frame(review.fl_mixed_classes)
         if fl_frame.empty:
@@ -2226,6 +2263,13 @@ def _render_note_rule_controls(
     active_rules = _manual_rules()
     if active_rules:
         st.caption(f"Aktive manuelle Regeln: {len(active_rules)}")
+
+
+def _render_note_status_frame(title: str, rows) -> None:
+    if not rows:
+        return
+    st.markdown(f"**{title}**")
+    st.dataframe(_review_note_frame(rows), width="stretch", hide_index=True)
 
 
 def _render_quality_notice(solver_result, student_count: int) -> None:

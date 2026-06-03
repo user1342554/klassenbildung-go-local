@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, Student
 from klassenbildung.services.manual_rules import (
+    NoteReviewStatus,
     active_manual_rules,
     add_manual_rule_entry,
     create_manual_rule_entry,
     delete_manual_rule_entry,
     manual_rule_entry_records,
+    note_review_status_by_student,
     update_manual_rule_entry,
     validation_errors_for_new_rule,
 )
@@ -82,6 +84,21 @@ def test_add_manual_rule_entry_reactivates_duplicate() -> None:
 
     assert changed is True
     assert active_manual_rules(entries) == [rule]
+
+
+def test_note_review_status_counts_kept_and_converted_notes() -> None:
+    converted = create_manual_rule_entry(
+        ManualRule("SEPARATE", "s1", "s2"),
+        source="note",
+        note_student_id="s1",
+    )
+
+    statuses = note_review_status_by_student([converted], {"s2"})
+
+    assert statuses == {
+        "s1": NoteReviewStatus.CONVERTED_TO_RULE,
+        "s2": NoteReviewStatus.KEPT_AS_NOTE,
+    }
 
 
 def _student(index: int) -> Student:

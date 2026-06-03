@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 import hashlib
 from typing import Iterable, Literal
 
@@ -10,6 +11,12 @@ from klassenbildung.validation.validator import validate_students
 
 
 ManualRuleSource = Literal["note", "manual"]
+
+
+class NoteReviewStatus(StrEnum):
+    UNREVIEWED = "unreviewed"
+    KEPT_AS_NOTE = "kept_as_note"
+    CONVERTED_TO_RULE = "converted_to_rule"
 
 
 @dataclass(frozen=True)
@@ -129,6 +136,17 @@ def manual_rule_entry_records(entries: list[ManualRuleEntry], students: list[Stu
         }
         for entry in entries
     ]
+
+
+def note_review_status_by_student(
+    entries: list[ManualRuleEntry],
+    kept_note_student_ids: set[str],
+) -> dict[str, NoteReviewStatus]:
+    statuses = {student_id: NoteReviewStatus.KEPT_AS_NOTE for student_id in kept_note_student_ids}
+    for entry in entries:
+        if entry.source == "note" and entry.note_student_id and entry.active:
+            statuses[entry.note_student_id] = NoteReviewStatus.CONVERTED_TO_RULE
+    return statuses
 
 
 def _manual_rule_entry_id(rule: ManualRule, source: ManualRuleSource, note_student_id: str | None) -> str:
