@@ -282,6 +282,28 @@ def _init_state() -> None:
     st.session_state.setdefault("manual_rules", [])
     st.session_state.setdefault("manual_rule_entries", [])
     st.session_state.setdefault("note_hints_kept", set())
+    st.session_state.setdefault("student_data_hash", None)
+    st.session_state.setdefault("manual_rule_reset_message", None)
+
+
+def _set_import_result(result) -> None:
+    new_hash = manual_rules_module.student_data_hash(result.students)
+    old_hash = st.session_state.get("student_data_hash")
+    st.session_state.import_result = result
+    st.session_state.validation_result = None
+    st.session_state.solver_result = None
+    if old_hash and old_hash != new_hash:
+        _clear_manual_rule_state()
+        st.session_state.manual_rule_reset_message = (
+            "Die hochgeladenen Daten haben sich geändert. Manuelle Regeln wurden zurückgesetzt."
+        )
+    st.session_state.student_data_hash = new_hash
+
+
+def _clear_manual_rule_state() -> None:
+    st.session_state.manual_rules = []
+    st.session_state.manual_rule_entries = []
+    st.session_state.note_hints_kept = set()
 
 
 def _manual_rules() -> list[ManualRule]:
@@ -686,12 +708,7 @@ def _upload_tab(settings: OptimizationSettings) -> None:
         col_a, col_b = st.columns([1, 1])
         if col_a.button("Testdatei laden"):
             result = import_excel(DUMMY_EXCEL_PATH.read_bytes(), filename=DUMMY_EXCEL_PATH.name)
-            st.session_state.import_result = result
-            st.session_state.validation_result = None
-            st.session_state.solver_result = None
-            st.session_state.manual_rules = []
-            st.session_state.manual_rule_entries = []
-            st.session_state.note_hints_kept = set()
+            _set_import_result(result)
             st.rerun()
         col_b.download_button(
             "Testdatei herunterladen",
@@ -704,17 +721,15 @@ def _upload_tab(settings: OptimizationSettings) -> None:
     uploaded = st.file_uploader("Excel-Datei hochladen", type=["xlsx", "xlsm"])
     if uploaded and st.button("Datei prüfen"):
         result = import_excel(uploaded, filename=uploaded.name)
-        st.session_state.import_result = result
-        st.session_state.validation_result = None
-        st.session_state.solver_result = None
-        st.session_state.manual_rules = []
-        st.session_state.manual_rule_entries = []
-        st.session_state.note_hints_kept = set()
+        _set_import_result(result)
 
     result = st.session_state.import_result
     if not result:
         st.info("Noch keine Datei geladen.")
         return
+    if st.session_state.get("manual_rule_reset_message"):
+        st.warning(st.session_state.manual_rule_reset_message)
+        st.session_state.manual_rule_reset_message = None
 
     st.subheader(result.source_filename or "Excel-Datei")
     stats = build_import_statistics(result.students)
@@ -829,6 +844,10 @@ def _render_manual_rules_panel(
     if action_col_b.button("Löschen", key=f"manual_rule_delete_{key_suffix}"):
         st.session_state.manual_rule_entries = manual_rules_module.delete_manual_rule_entry(entries, selected_entry.id)
         st.session_state.manual_rules = _manual_rules()
+        st.session_state.solver_result = None
+        st.rerun()
+    if st.button("Regeln zurücksetzen", key=f"manual_rule_clear_{key_suffix}"):
+        _clear_manual_rule_state()
         st.session_state.solver_result = None
         st.rerun()
 

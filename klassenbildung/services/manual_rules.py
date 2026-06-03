@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 import hashlib
+import json
 from typing import Iterable, Literal
 
 from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, Student, ValidationMessage
@@ -147,6 +148,32 @@ def note_review_status_by_student(
         if entry.source == "note" and entry.note_student_id and entry.active:
             statuses[entry.note_student_id] = NoteReviewStatus.CONVERTED_TO_RULE
     return statuses
+
+
+def student_data_hash(students: list[Student]) -> str:
+    payload = [
+        {
+            "id": student.internal_id,
+            "row": student.row_number,
+            "nr": student.nr,
+            "school": student.school,
+            "last_name": student.last_name,
+            "first_name": student.first_name,
+            "eligibility": student.eligibility,
+            "gender": student.gender,
+            "language": student.second_language,
+            "music": student.music_profile,
+            "primary_class": student.primary_class,
+            "friend1": student.friend1,
+            "friend2": student.friend2,
+            "support": student.is_support,
+            "note_text": student.note_text,
+            "comment": student.comment,
+        }
+        for student in students
+    ]
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _manual_rule_entry_id(rule: ManualRule, source: ManualRuleSource, note_student_id: str | None) -> str:

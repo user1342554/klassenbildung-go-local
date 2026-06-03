@@ -9,6 +9,7 @@ from klassenbildung.services.manual_rules import (
     delete_manual_rule_entry,
     manual_rule_entry_records,
     note_review_status_by_student,
+    student_data_hash,
     update_manual_rule_entry,
     validation_errors_for_new_rule,
 )
@@ -101,7 +102,16 @@ def test_note_review_status_counts_kept_and_converted_notes() -> None:
     }
 
 
-def _student(index: int) -> Student:
+def test_student_data_hash_changes_only_when_student_data_changes() -> None:
+    students = [_student(1), _student(2)]
+    same_students = [_student(1), _student(2)]
+    changed_students = [_student(1), _student(2, note_text="neue Notiz")]
+
+    assert student_data_hash(same_students) == student_data_hash(students)
+    assert student_data_hash(changed_students) != student_data_hash(students)
+
+
+def _student(index: int, note_text: str | None = None) -> Student:
     return Student(
         internal_id=f"s{index}",
         row_number=index,
@@ -120,7 +130,7 @@ def _student(index: int) -> Student:
         primary_class="4a",
         friend1=None,
         friend2=None,
-        comment=None,
-        note_text=None,
+        comment=note_text,
+        note_text=note_text,
         is_support=False,
     )
