@@ -4,12 +4,15 @@ import io
 
 from openpyxl import load_workbook
 
-from klassenbildung.core.models import ClassConfig, ProfileSlackReport, Student
+from klassenbildung.core.models import ClassConfig, ManualRule, ProfileSlackReport, Student
 from klassenbildung.core.settings import load_settings
 from klassenbildung.excel_io.excel_export import export_excel
 from klassenbildung.excel_io.excel_import import import_excel
 from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.presentation.candidate_summary import CANDIDATE_SUMMARY_FIELDS
+from klassenbildung.presentation.result_view_model import candidate_summary_from_report
+from klassenbildung.services.assignment_draft import ManualMove, create_assignment_draft, move_impact
+from klassenbildung.services.manual_rules import NoteReviewStatus, create_manual_rule_entry
 
 
 def test_export_updates_basis_and_creates_class_sheets(sample_workbook_bytes: bytes) -> None:
@@ -291,6 +294,74 @@ def test_standard_export_does_not_emit_legacy_slack_sheet() -> None:
     assert "Kandidaten-Details" in workbook.sheetnames
     assert "Profil-Slack-Vergleich" not in workbook.sheetnames
     assert "slack_candidates" not in workbook.sheetnames
+
+
+def test_export_writes_manual_rules_notes_and_changes_sheets() -> None:
+    students = [
+        _student(1, "F", "B", friend1="2", note_text="nicht mit Max zusammen"),
+        _student(2, "F", "B", friend1="1"),
+        _student(3, "L", "S"),
+    ]
+    class_configs = [
+        ClassConfig("5a", "5a", 0, 3, [], []),
+        ClassConfig("5b", "5b", 0, 3, [], []),
+    ]
+    assignments = {"s1": "5a", "s2": "5a", "s3": "5b"}
+    settings = load_settings()
+    score = score_solution(students, assignments, settings, class_configs)
+    candidate = ProfileSlackReport(
+        variant="E beide +1",
+        language_mixed_limit=2,
+        music_mixed_limit=2,
+        status="FEASIBLE",
+        isolated_friend_request_count=score.isolated_friend_request_count,
+        friend1_fulfilled=score.friend1_fulfilled,
+        friend1_total=score.friend1_total,
+        mutual_friend_fulfilled=score.mutual_friend_fulfilled,
+        mutual_friend_total=score.mutual_friend_total,
+        friend2_fulfilled=score.friend2_fulfilled,
+        friend2_total=score.friend2_total,
+        mixed_language_class_count=score.mixed_language_class_count,
+        mixed_music_class_count=score.mixed_music_class_count,
+        language_minority_student_count=score.language_minority_student_count,
+        music_minority_student_count=score.music_minority_student_count,
+        review_candidate=True,
+        social_limit_met=True,
+        assignments=assignments,
+    )
+    summary = candidate_summary_from_report(candidate, len(students))
+    draft = create_assignment_draft(summary)
+    move = ManualMove("s3", "5b", "5a", reason="Teständerung")
+    impact = move_impact(draft, move, summary, students, class_configs, settings)
+    manual_rule_entry = create_manual_rule_entry(
+        ManualRule("SEPARATE", "s1", "s2"),
+        source="note",
+        note_student_id="s1",
+    )
+
+    exported = export_excel(
+        None,
+        students,
+        assignments,
+        class_configs,
+        score,
+        [],
+        profile_slack_reports=[candidate],
+        manual_rule_entries=[manual_rule_entry],
+        note_review_status_by_student={"s1": NoteReviewStatus.CONVERTED_TO_RULE},
+        manual_moves=[move],
+        manual_move_impacts=[impact],
+        settings=settings,
+    )
+    workbook = load_workbook(io.BytesIO(exported))
+
+    assert "Manuelle Regeln" in workbook.sheetnames
+    assert "Notizen" in workbook.sheetnames
+    assert "Manuelle Änderungen" in workbook.sheetnames
+    assert workbook["Manuelle Regeln"]["A2"].value == "aktiv"
+    assert workbook["Notizen"]["C2"].value == "in Regel umgewandelt"
+    assert workbook["Manuelle Änderungen"]["B2"].value == "3 - V3 N3"
+    assert "Ohne Wunschfreund" in workbook["Manuelle Änderungen"]["G2"].value
 
 
 def _student(

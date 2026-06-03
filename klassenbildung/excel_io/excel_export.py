@@ -7,6 +7,7 @@ from openpyxl.styles import Font
 
 import klassenbildung.presentation.candidate_review as candidate_review_module
 import klassenbildung.presentation.candidate_summary as candidate_summary_module
+import klassenbildung.services.manual_rules as manual_rules_module
 from klassenbildung.core.constants import BASIS_SHEET_NAME, EXPORT_COLUMN_COUNT
 from klassenbildung.core.models import (
     ClassConfig,
@@ -33,6 +34,10 @@ def export_excel(
     profile_refinement_reports: list[ProfileSlackReport] | None = None,
     include_expert_diagnostics: bool = False,
     settings: OptimizationSettings | None = None,
+    manual_rule_entries: list | None = None,
+    note_review_status_by_student: dict[str, object] | None = None,
+    manual_moves: list | None = None,
+    manual_move_impacts: list | None = None,
 ) -> bytes:
     workbook = _load_or_create_workbook(source_workbook_bytes)
     basis = workbook[BASIS_SHEET_NAME]
@@ -59,6 +64,9 @@ def export_excel(
         profile_slack_reports or [],
         settings or load_settings(),
     )
+    _write_manual_rules_sheet(workbook, manual_rule_entries or [], students)
+    _write_notes_sheet(workbook, students, assignments, manual_rule_entries or [], note_review_status_by_student or {})
+    _write_manual_changes_sheet(workbook, manual_moves or [], manual_move_impacts or [], students)
     _write_warning_sheet(workbook, validation_messages or [])
 
     output = py_io.BytesIO()
@@ -367,6 +375,92 @@ def _write_candidate_detail_sheet(
         _append_review_details(sheet, review)
 
 
+def _write_manual_rules_sheet(workbook: Workbook, manual_rule_entries: list, students: list[Student]) -> None:
+    if "Manuelle Regeln" in workbook.sheetnames:
+        del workbook["Manuelle Regeln"]
+    if not manual_rule_entries:
+        return
+    sheet = workbook.create_sheet("Manuelle Regeln")
+    headers = ["Status", "Typ", "Schüler", "Partner/Zielklasse", "Quelle", "Notizstatus", "Aktiv"]
+    sheet.append(headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for record, entry in zip(manual_rules_module.manual_rule_entry_records(manual_rule_entries, students), manual_rule_entries, strict=True):
+        note_status = "in Regel umgewandelt" if getattr(entry, "source", None) == "note" else "-"
+        sheet.append(
+            [
+                record["Status"],
+                record["Typ"],
+                record["Schüler"],
+                record["Ziel / Partner"],
+                record["Quelle"],
+                note_status,
+                "ja" if getattr(entry, "active", False) else "nein",
+            ]
+        )
+
+
+def _write_notes_sheet(
+    workbook: Workbook,
+    students: list[Student],
+    assignments: dict[str, str],
+    manual_rule_entries: list,
+    note_review_status_by_student: dict[str, object],
+) -> None:
+    if "Notizen" in workbook.sheetnames:
+        del workbook["Notizen"]
+    note_students = [student for student in students if _student_has_manual_note(student)]
+    if not note_students:
+        return
+    sheet = workbook.create_sheet("Notizen")
+    headers = ["Schüler", "Klasse im Kandidaten", "Status", "Notiz", "Umgewandelt in Regel"]
+    sheet.append(headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    converted_by_student = {
+        entry.note_student_id: _manual_rule_label(entry, students)
+        for entry in manual_rule_entries
+        if getattr(entry, "source", None) == "note" and getattr(entry, "note_student_id", None)
+    }
+    for student in sorted(note_students, key=lambda item: (item.sort_name, item.row_number)):
+        status = note_review_status_by_student.get(student.internal_id, manual_rules_module.NoteReviewStatus.UNREVIEWED)
+        sheet.append(
+            [
+                student.display_label,
+                assignments.get(student.internal_id, "-"),
+                _note_review_status_text(status),
+                _student_effective_note_text(student) or "",
+                converted_by_student.get(student.internal_id, ""),
+            ]
+        )
+
+
+def _write_manual_changes_sheet(workbook: Workbook, manual_moves: list, manual_move_impacts: list, students: list[Student]) -> None:
+    if "Manuelle Änderungen" in workbook.sheetnames:
+        del workbook["Manuelle Änderungen"]
+    if not manual_moves:
+        return
+    sheet = workbook.create_sheet("Manuelle Änderungen")
+    headers = ["Schritt", "Schüler", "von Klasse", "nach Klasse", "fixiert", "Grund", "Auswirkung"]
+    sheet.append(headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    impacts_by_index = {index: impact for index, impact in enumerate(manual_move_impacts, start=1)}
+    for index, move in enumerate(manual_moves, start=1):
+        impact = impacts_by_index.get(index)
+        sheet.append(
+            [
+                index,
+                _student_label(students, move.student_id),
+                move.from_class_id,
+                move.to_class_id,
+                "ja" if move.lock_after_move else "nein",
+                move.reason or "",
+                _move_impact_text(impact),
+            ]
+        )
+
+
 def _append_review_details(sheet, review) -> None:
     variant = review.summary.name
     for row in review.students_without_wishfriend:
@@ -472,6 +566,58 @@ def _friend_with_class(name: str | None, class_id: str | None) -> str:
     if not name:
         return "-"
     return f"{name} ({class_id or '-'})"
+
+
+def _student_effective_note_text(student: object) -> str | None:
+    note_text = getattr(student, "note_text", None)
+    if note_text is not None:
+        return note_text
+    return getattr(student, "comment", None)
+
+
+def _student_has_manual_note(student: object) -> bool:
+    note_text = _student_effective_note_text(student)
+    return bool(note_text and note_text.strip())
+
+
+def _student_label(students: list[Student], student_id: str | None) -> str:
+    if not student_id:
+        return "-"
+    for student in students:
+        if student.internal_id == student_id:
+            return student.display_label
+    return student_id
+
+
+def _manual_rule_label(entry, students: list[Student]) -> str:
+    record = manual_rules_module.manual_rule_entry_records([entry], students)[0]
+    return f"{record['Typ']}: {record['Schüler']} -> {record['Ziel / Partner']}"
+
+
+def _note_review_status_text(status: object) -> str:
+    if status == manual_rules_module.NoteReviewStatus.CONVERTED_TO_RULE or str(status) == "converted_to_rule":
+        return "in Regel umgewandelt"
+    if status == manual_rules_module.NoteReviewStatus.KEPT_AS_NOTE or str(status) == "kept_as_note":
+        return "als Hinweis behalten"
+    return "ungeprüft"
+
+
+def _move_impact_text(impact) -> str:
+    if not impact:
+        return ""
+    parts = [
+        f"Ohne Wunschfreund {impact.before_summary.without_wishfriend}->{impact.after_summary.without_wishfriend}",
+        f"Freund 1 {impact.before_summary.friend1_satisfied}->{impact.after_summary.friend1_satisfied}",
+        f"Gegenseitig {impact.before_summary.mutual_satisfied}->{impact.after_summary.mutual_satisfied}",
+        f"Freund 2 {impact.before_summary.friend2_satisfied}->{impact.after_summary.friend2_satisfied}",
+        f"F/L-Minderheit {impact.before_summary.fl_minority}->{impact.after_summary.fl_minority}",
+        f"Musik-Minderheit {impact.before_summary.music_minority}->{impact.after_summary.music_minority}",
+    ]
+    for change in impact.class_size_changes:
+        parts.append(f"{change.class_id} {change.before}->{change.after}")
+    if impact.hard_violations:
+        parts.append(f"Harte Verletzungen: {len(impact.hard_violations)}")
+    return "; ".join(parts)
 
 
 def _ratio_value(fulfilled: int | None, total: int | None) -> str:

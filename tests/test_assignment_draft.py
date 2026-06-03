@@ -9,11 +9,13 @@ from klassenbildung.services.assignment_draft import (
     AssignmentDraftError,
     ManualMove,
     apply_move,
+    build_candidate_review_for_draft,
     create_assignment_draft,
     move_impact,
     revert_last_move,
     score_assignment,
 )
+from klassenbildung.services.manual_rules import NoteReviewStatus
 from klassenbildung.services.manual_rules import create_manual_rule_entry
 
 
@@ -181,6 +183,25 @@ def test_assignment_draft_lock_creates_fix_rule() -> None:
     assert moved.locked_students == {"s1"}
     assert ManualRule("FIX_CLASS", "s1", class_id="5b") in moved.manual_rules
     assert not score.hard_violations
+
+
+def test_assignment_draft_builds_review_model_from_current_assignments() -> None:
+    summary, students, classes, settings = _fixture(note_for_s1=True)
+    draft = create_assignment_draft(summary)
+    moved = apply_move(draft, ManualMove("s2", "5a", "5b"), students=students, class_configs=classes)
+
+    review = build_candidate_review_for_draft(
+        moved,
+        summary,
+        students,
+        classes,
+        settings,
+        note_review_status_by_student={"s1": NoteReviewStatus.KEPT_AS_NOTE},
+    )
+
+    assert review.summary.assignments == moved.current_assignments
+    assert len(review.students_without_wishfriend) == review.summary.without_wishfriend
+    assert review.students_with_manual_notes[0].review_status == NoteReviewStatus.KEPT_AS_NOTE
 
 
 def _fixture(note_for_s1: bool = False):

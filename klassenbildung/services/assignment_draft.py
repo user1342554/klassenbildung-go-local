@@ -4,7 +4,12 @@ from dataclasses import dataclass, replace
 
 from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, Student
 from klassenbildung.optimization.scoring import score_solution
-from klassenbildung.presentation.candidate_review import ReviewWarning, ReviewWarningLevel
+from klassenbildung.presentation.candidate_review import (
+    CandidateReviewModel,
+    ReviewWarning,
+    ReviewWarningLevel,
+    build_candidate_review_model,
+)
 from klassenbildung.presentation.result_view_model import CandidateSummary
 from klassenbildung.services.manual_rules import ManualRuleEntry, active_manual_rules
 
@@ -131,6 +136,26 @@ def score_assignment(
     settings: OptimizationSettings,
 ):
     return score_solution(students, draft.current_assignments, settings, class_configs, draft.manual_rules)
+
+
+def build_candidate_review_for_draft(
+    draft: AssignmentDraft,
+    base_summary: CandidateSummary,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+    *,
+    note_review_status_by_student: dict | None = None,
+) -> CandidateReviewModel:
+    score = score_assignment(draft, students, class_configs, settings)
+    summary = _summary_from_score(base_summary, draft.current_assignments, score, len(students))
+    return build_candidate_review_model(
+        summary,
+        students,
+        class_configs,
+        settings,
+        note_review_status_by_student=note_review_status_by_student,
+    )
 
 
 def move_impact(
