@@ -257,6 +257,42 @@ def test_standard_export_uses_candidate_summaries_not_slack_candidates() -> None
     assert "balanced_recommendation" not in exported_text
 
 
+def test_standard_export_does_not_emit_legacy_slack_sheet() -> None:
+    students = [_student(1, "F", "B"), _student(2, "L", "S")]
+    class_configs = [
+        ClassConfig("5a", "5a", 0, 2, [], []),
+        ClassConfig("5b", "5b", 0, 2, [], []),
+    ]
+    assignments = {"s1": "5a", "s2": "5b"}
+    score = score_solution(students, assignments, load_settings(), class_configs)
+    candidate = ProfileSlackReport(
+        variant="E beide +1",
+        language_mixed_limit=2,
+        music_mixed_limit=2,
+        status="FEASIBLE",
+        isolated_friend_request_count=score.isolated_friend_request_count,
+        review_candidate=True,
+        social_limit_met=True,
+        assignments=assignments,
+    )
+
+    exported = export_excel(
+        None,
+        students,
+        assignments,
+        class_configs,
+        score,
+        [],
+        profile_slack_reports=[candidate],
+    )
+    workbook = load_workbook(io.BytesIO(exported))
+
+    assert "Kandidaten" in workbook.sheetnames
+    assert "Kandidaten-Details" in workbook.sheetnames
+    assert "Profil-Slack-Vergleich" not in workbook.sheetnames
+    assert "slack_candidates" not in workbook.sheetnames
+
+
 def _student(
     index: int,
     language: str,

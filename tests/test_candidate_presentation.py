@@ -4,8 +4,9 @@ import io
 
 from openpyxl import load_workbook
 
-from klassenbildung.core.models import OptimizationSettings, ProfileSlackReport, SolverResult
+from klassenbildung.core.models import ClassConfig, OptimizationSettings, ProfileSlackReport, SolverResult, Student
 from klassenbildung.excel_io.excel_export import export_excel
+from klassenbildung.optimization.solver import solve_assignments
 from klassenbildung.presentation.candidate_summary import (
     CANDIDATE_SUMMARY_FIELDS,
     candidate_summary_records,
@@ -145,6 +146,54 @@ def test_debug_payload_does_not_emit_slack_candidates() -> None:
     assert "slack_candidates" not in payload
 
 
+def test_current_debug_payload_does_not_emit_legacy_recommendation_keys_from_solver_run() -> None:
+    import app
+
+    students = [
+        _student(1, "F", "B", friend1="2"),
+        _student(2, "L", "S", friend1="1"),
+        _student(3, "F", "G", friend1="4"),
+        _student(4, "L", "B", friend1="3"),
+    ]
+    class_configs = [
+        ClassConfig("5a", "5a", 2, 2, [], []),
+        ClassConfig("5b", "5b", 2, 2, [], []),
+    ]
+    settings = OptimizationSettings(solver_time_limit_seconds=2)
+    solver_result = solve_assignments(students, class_configs, settings)
+    assert solver_result.score_report
+
+    payload = app._solver_debug_payload(
+        solver_result,
+        students,
+        class_configs,
+        settings,
+        solver_result.score_report,
+    )
+    keys = _nested_keys(payload)
+
+    assert "primary_recommendation" not in keys
+    assert "balanced_recommendation" not in keys
+    assert "slack_candidates" not in keys
+    assert "candidate_summaries" in payload
+    assert "candidate_reviews" in payload
+    assert "default_review_candidate" in payload
+    assert "social_strongest_candidate" in payload
+    assert "fl_preserving_candidate" in payload
+    assert "overall_status" in payload
+
+
+def test_current_candidate_payload_uses_explicit_role_names() -> None:
+    payload = _debug_payload()
+
+    for candidate in payload["candidate_summaries"]:
+        keys = set(candidate)
+        assert "role" in keys
+        assert "recommendation_role" in keys
+        assert "primary_recommendation" not in keys
+        assert "balanced_recommendation" not in keys
+
+
 def _debug_payload() -> dict[str, object]:
     import app
 
@@ -160,6 +209,20 @@ def _debug_payload() -> dict[str, object]:
     score = type("Score", (), {"total_score": 0, "hard_violations": [], "isolated_friend_request_count": 0})()
 
     return app._solver_debug_payload(solver_result, [], [], OptimizationSettings(), score)
+
+
+def _nested_keys(value: object) -> set[str]:
+    if isinstance(value, dict):
+        keys = set(value)
+        for item in value.values():
+            keys.update(_nested_keys(item))
+        return keys
+    if isinstance(value, list):
+        keys: set[str] = set()
+        for item in value:
+            keys.update(_nested_keys(item))
+        return keys
+    return set()
 
 
 def test_standard_mode_hides_solver_jargon() -> None:
@@ -218,6 +281,31 @@ def _report(
         social_limit_met=True,
         recommendation_role=role,
         assignments={f"s{index}": "5a" for index in range(210)},
+    )
+
+
+def _student(index: int, language: str, music: str = "Reg", *, friend1: str | None = None) -> Student:
+    return Student(
+        internal_id=f"s{index}",
+        row_number=index,
+        original_class=None,
+        nr=str(index),
+        school="Grundschule",
+        last_name=f"N{index}",
+        first_name=f"V{index}",
+        eligibility="GYM",
+        gender="w" if index % 2 else "m",
+        birthdate=None,
+        nationality="DE",
+        religion="ev",
+        second_language=language,
+        music_profile=music,
+        primary_class="4a",
+        friend1=friend1,
+        friend2=None,
+        comment=None,
+        note_text=None,
+        is_support=False,
     )
 
 
