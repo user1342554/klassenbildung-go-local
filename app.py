@@ -63,7 +63,7 @@ def _reload_stale_project_modules() -> None:
     global coerce_settings, generate_class_configs, load_class_configs, load_settings
     global save_class_configs, save_settings
     global export_excel
-    global candidate_review_module, candidate_summary_module
+    global candidate_review_module, candidate_summary_module, note_rule_conversion_module
 
     stale_core = "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
     stale_summary = not hasattr(candidate_summary_module, "candidate_summary_records")
@@ -95,6 +95,7 @@ def _reload_stale_project_modules() -> None:
         load_settings = reloaded_settings.load_settings
         save_class_configs = reloaded_settings.save_class_configs
         save_settings = reloaded_settings.save_settings
+        note_rule_conversion_module = importlib.reload(note_rule_conversion_module)
 
     if stale_summary:
         candidate_summary_module = importlib.reload(candidate_summary_module)

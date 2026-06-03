@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
+import klassenbildung.core.models as core_models
 from klassenbildung.core.models import ClassConfig, OptimizationSettings, Student
 from klassenbildung.optimization.solver import solve_assignments
 from klassenbildung.services.note_rule_conversion import (
@@ -130,6 +133,34 @@ def test_converted_note_rule_is_used_in_next_solver_run() -> None:
     assert result.assignments["s1"] != result.assignments["s2"]
     assert result.score_report
     assert not result.score_report.hard_violations
+
+
+def test_note_rule_service_imports_when_core_note_helpers_are_stale() -> None:
+    effective_note_helper = getattr(core_models, "student_effective_note_text")
+    has_note_helper = getattr(core_models, "student_has_manual_note")
+    try:
+        delattr(core_models, "student_effective_note_text")
+        delattr(core_models, "student_has_manual_note")
+        import klassenbildung.services.note_rule_conversion as module
+
+        reloaded = importlib.reload(module)
+        students = [_student(1, note_text="nicht mit 2"), _student(2)]
+        result = reloaded.convert_note_to_manual_rule(
+            students,
+            "s1",
+            "SEPARATE",
+            selected_student_id="s2",
+            confirmed=True,
+        )
+    finally:
+        core_models.student_effective_note_text = effective_note_helper
+        core_models.student_has_manual_note = has_note_helper
+        import klassenbildung.services.note_rule_conversion as module
+
+        importlib.reload(module)
+
+    assert result.rule
+    assert result.rule.type == "SEPARATE"
 
 
 def _student(index: int, note_text: str | None = None) -> Student:

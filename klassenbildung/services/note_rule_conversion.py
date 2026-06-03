@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
-from klassenbildung.core.models import ManualRule, RuleType, Student, student_effective_note_text, student_has_manual_note
+from klassenbildung.core.models import ManualRule
 from klassenbildung.optimization.scoring import resolve_student_ref
+
+if TYPE_CHECKING:
+    from klassenbildung.core.models import Student
+
+
+RuleType = Literal["FIX_CLASS", "SEPARATE", "TOGETHER"]
 
 
 class NoteRuleConversionError(ValueError):
@@ -41,7 +48,7 @@ def convert_note_to_manual_rule(
             raise NoteRuleConversionError("Eine Paarregel braucht zwei unterschiedliche Schüler.")
         return NoteRuleConversionResult(
             student_id=student.internal_id,
-            note_text=student_effective_note_text(student) or "",
+            note_text=_student_effective_note_text(student) or "",
             rule=ManualRule(rule_type, student.internal_id, other.internal_id),
         )
 
@@ -50,7 +57,7 @@ def convert_note_to_manual_rule(
             raise NoteRuleConversionError("Für eine Klassenfixierung muss eine Zielklasse ausgewählt werden.")
         return NoteRuleConversionResult(
             student_id=student.internal_id,
-            note_text=student_effective_note_text(student) or "",
+            note_text=_student_effective_note_text(student) or "",
             rule=ManualRule("FIX_CLASS", student.internal_id, class_id=class_id),
         )
 
@@ -68,7 +75,7 @@ def keep_note_as_hint(
         raise NoteRuleConversionError("Hinweis-Entscheidung braucht eine ausdrückliche Bestätigung.")
     return NoteRuleConversionResult(
         student_id=student.internal_id,
-        note_text=student_effective_note_text(student) or "",
+        note_text=_student_effective_note_text(student) or "",
         rule=None,
         kept_as_hint=True,
     )
@@ -78,6 +85,18 @@ def _student_with_note(students: list[Student], student_id: str) -> Student:
     student = resolve_student_ref(students, student_id)
     if not student:
         raise NoteRuleConversionError("Der Schüler wurde nicht gefunden.")
-    if not student_has_manual_note(student):
+    if not _student_has_manual_note(student):
         raise NoteRuleConversionError("Dieser Schüler hat keine manuelle Notiz.")
     return student
+
+
+def _student_effective_note_text(student: object) -> str | None:
+    note_text = getattr(student, "note_text", None)
+    if note_text is not None:
+        return note_text
+    return getattr(student, "comment", None)
+
+
+def _student_has_manual_note(student: object) -> bool:
+    note_text = _student_effective_note_text(student)
+    return bool(note_text and note_text.strip())
