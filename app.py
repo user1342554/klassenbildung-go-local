@@ -15,6 +15,7 @@ import klassenbildung.core.settings as core_settings_module
 import klassenbildung.excel_io.excel_export as excel_export_module
 import klassenbildung.presentation.candidate_review as candidate_review_module
 import klassenbildung.presentation.candidate_summary as candidate_summary_module
+import klassenbildung.presentation.reoptimization_view as reoptimization_view_module
 import klassenbildung.services.assignment_draft as assignment_draft_module
 import klassenbildung.services.manual_rules as manual_rules_module
 import klassenbildung.services.note_rule_conversion as note_rule_conversion_module
@@ -66,7 +67,7 @@ def _reload_stale_project_modules() -> None:
     global coerce_settings, generate_class_configs, load_class_configs, load_settings
     global save_class_configs, save_settings
     global export_excel
-    global candidate_review_module, candidate_summary_module
+    global candidate_review_module, candidate_summary_module, reoptimization_view_module
     global assignment_draft_module, manual_rules_module, note_rule_conversion_module, reoptimization_module
 
     stale_core = "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
@@ -77,6 +78,7 @@ def _reload_stale_project_modules() -> None:
     )
     stale_manual_rules = not hasattr(manual_rules_module, "student_effective_note_text")
     stale_reoptimization = not hasattr(reoptimization_module, "reoptimize_with_manual_fixations")
+    stale_reoptimization_view = not hasattr(reoptimization_view_module, "reoptimization_summary_text")
     stale_review = (
         not hasattr(candidate_review_module, "build_candidate_review_model")
         or "note_review_status_by_student"
@@ -88,6 +90,7 @@ def _reload_stale_project_modules() -> None:
     stale_export = (
         "include_expert_diagnostics" not in inspect.signature(export_excel).parameters
         or "base_candidate_name" not in inspect.signature(export_excel).parameters
+        or "reoptimization_report" not in inspect.signature(export_excel).parameters
         or not hasattr(excel_export_module, "_write_candidate_summary_sheet")
     )
     if (
@@ -98,6 +101,7 @@ def _reload_stale_project_modules() -> None:
         and not stale_draft
         and not stale_manual_rules
         and not stale_reoptimization
+        and not stale_reoptimization_view
     ):
         return
 
@@ -135,6 +139,9 @@ def _reload_stale_project_modules() -> None:
 
     if stale_reoptimization:
         reoptimization_module = importlib.reload(reoptimization_module)
+
+    if stale_reoptimization_view:
+        reoptimization_view_module = importlib.reload(reoptimization_view_module)
 
     if stale_export or stale_summary or stale_review:
         export_excel = importlib.reload(excel_export_module).export_excel
@@ -1133,6 +1140,8 @@ def _result_tab(settings: OptimizationSettings) -> None:
     export_score = score
     export_moves = []
     export_impacts = []
+    export_base_candidate_name = None
+    reoptimization_report = st.session_state.get("last_reoptimization_report")
     if export_draft is not None:
         export_assignments = export_draft.current_assignments
         export_score = assignment_draft_module.score_assignment(
@@ -1143,7 +1152,13 @@ def _result_tab(settings: OptimizationSettings) -> None:
         )
         export_moves = list(export_draft.moves)
         export_impacts = list(st.session_state.get("editor_move_impacts", []))
+        export_base_candidate_name = _export_base_candidate_name(export_draft, solver_result, len(result.students))
         st.info("Der Export enthält die aktuellen manuellen Änderungen aus dem Editor.")
+    elif reoptimization_report is not None and reoptimization_report.succeeded:
+        export_moves = list(reoptimization_report.manual_moves)
+        export_impacts = list(reoptimization_report.manual_move_impacts)
+        export_base_candidate_name = reoptimization_report.base_candidate_name
+        st.info("Der Export enthält die Neuoptimierung mit übernommenen Fixierungen.")
 
     validation_messages = st.session_state.validation_result.messages if st.session_state.validation_result else []
     export_bytes = export_excel(
@@ -1163,7 +1178,8 @@ def _result_tab(settings: OptimizationSettings) -> None:
         note_review_status_by_student=_note_review_status_by_student(),
         manual_moves=export_moves,
         manual_move_impacts=export_impacts,
-        base_candidate_name=_export_base_candidate_name(export_draft, solver_result, len(result.students)),
+        base_candidate_name=export_base_candidate_name,
+        reoptimization_report=reoptimization_report,
     )
     st.download_button(
         "Excel exportieren",
@@ -1603,6 +1619,14 @@ def _render_reoptimization_controls(
 ) -> None:
     locked_moves = [move for move in draft.moves if move.lock_after_move]
     st.markdown("**Neu optimieren mit manuellen Fixierungen**")
+    draft_score = assignment_draft_module.score_assignment(draft, students, class_configs, settings)
+    state = reoptimization_module.draft_reoptimization_state(draft, draft_score)
+    st.caption(reoptimization_view_module.reoptimization_state_text(state))
+    if state == reoptimization_module.ReoptimizationFlowState.DRAFT_HAS_CONFLICTS:
+        st.error("Neuoptimierung ist blockiert, solange der manuelle Entwurf harte Konflikte enthält.")
+        for hint in reoptimization_view_module.reoptimization_action_hints(state):
+            st.caption(hint)
+        return
     if not locked_moves:
         st.info("Neuoptimierung ist möglich, sobald mindestens eine Änderung mit 'Übernehmen und fixieren' übernommen wurde.")
         return
@@ -1615,10 +1639,17 @@ def _render_reoptimization_controls(
         key="editor_reoptimize_confirm",
     )
     if st.button("Fixierungen übernehmen und neu optimieren", disabled=not confirm, key="editor_reoptimize_with_fixes"):
-        report = reoptimization_module.reoptimize_with_manual_fixations(draft, students, class_configs, settings)
+        report = reoptimization_module.reoptimize_with_manual_fixations(
+            draft,
+            students,
+            class_configs,
+            settings,
+            base_candidate_name=_editor_base_candidate_name(draft.base_candidate_key),
+            manual_move_impacts=list(st.session_state.get("editor_move_impacts", [])),
+        )
         if not report.succeeded:
             st.session_state.last_reoptimization_report = report
-            st.error(f"Neuoptimierung nicht erfolgreich: {report.solver_result.status}")
+            st.error(reoptimization_view_module.reoptimization_summary_text(report))
             st.rerun()
         _promote_draft_fixations_to_manual_rules(draft)
         st.session_state.solver_result = report.solver_result
@@ -1633,14 +1664,13 @@ def _render_reoptimization_report(report) -> None:
         return
     st.markdown("**Vergleich nach Neuoptimierung**")
     if report.succeeded:
-        st.success(
-            f"Neu optimiert: {report.changed_student_count} Schüler gegenüber dem manuellen Entwurf verändert, "
-            f"{len(report.fixed_student_ids)} Fixierungen übernommen."
-        )
+        st.success(reoptimization_view_module.reoptimization_summary_text(report))
     else:
-        st.error(f"Neuoptimierung nicht erfolgreich: {report.solver_result.status}")
+        st.error(reoptimization_view_module.reoptimization_summary_text(report))
+        for hint in reoptimization_view_module.reoptimization_action_hints(report.flow_state):
+            st.caption(hint)
     st.dataframe(
-        pd.DataFrame(reoptimization_module.reoptimization_comparison_rows(report)),
+        pd.DataFrame(reoptimization_view_module.report_comparison_records(report)),
         width="stretch",
         hide_index=True,
     )
@@ -1700,6 +1730,16 @@ def _export_base_candidate_name(draft, solver_result, student_count: int) -> str
         if summary.key == draft.base_candidate_key:
             return f"{summary.key}: {summary.name}"
     return draft.base_candidate_key
+
+
+def _editor_base_candidate_name(candidate_key: str) -> str:
+    solver_result = st.session_state.get("solver_result")
+    result = st.session_state.get("import_result")
+    if solver_result and result:
+        for summary in candidate_summaries(solver_result, len(result.students)):
+            if summary.key == candidate_key:
+                return f"{summary.key}: {summary.name}"
+    return candidate_key
 
 
 def _student_assignment_frame(

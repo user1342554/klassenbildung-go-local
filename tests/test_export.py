@@ -11,8 +11,9 @@ from klassenbildung.excel_io.excel_import import import_excel
 from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.presentation.candidate_summary import CANDIDATE_SUMMARY_FIELDS
 from klassenbildung.presentation.result_view_model import candidate_summary_from_report
-from klassenbildung.services.assignment_draft import ManualMove, create_assignment_draft, move_impact
+from klassenbildung.services.assignment_draft import ManualMove, apply_move, create_assignment_draft, move_impact
 from klassenbildung.services.manual_rules import NoteReviewStatus, create_manual_rule_entry
+from klassenbildung.services.reoptimization import reoptimize_with_manual_fixations
 
 
 def test_export_updates_basis_and_creates_class_sheets(sample_workbook_bytes: bytes) -> None:
@@ -426,6 +427,76 @@ def test_export_active_manual_rules_match_ui_state() -> None:
     assert overview["Anzahl deaktivierter Regeln"] == 1
     assert workbook["Manuelle Regeln"]["A2"].value == "aktiv"
     assert workbook["Manuelle Regeln"]["A3"].value == "deaktiviert"
+
+
+def test_export_includes_reoptimized_solution_source() -> None:
+    students = [
+        _student(1, "F", "B", friend1="2"),
+        _student(2, "F", "B", friend1="1"),
+        _student(3, "L", "S"),
+    ]
+    class_configs = [
+        ClassConfig("5a", "5a", 0, 3, [], []),
+        ClassConfig("5b", "5b", 0, 3, [], []),
+    ]
+    assignments = {"s1": "5a", "s2": "5a", "s3": "5b"}
+    settings = load_settings()
+    score = score_solution(students, assignments, settings, class_configs)
+    candidate = ProfileSlackReport(
+        variant="E beide +1",
+        language_mixed_limit=2,
+        music_mixed_limit=2,
+        status="FEASIBLE",
+        isolated_friend_request_count=score.isolated_friend_request_count,
+        friend1_fulfilled=score.friend1_fulfilled,
+        friend1_total=score.friend1_total,
+        mutual_friend_fulfilled=score.mutual_friend_fulfilled,
+        mutual_friend_total=score.mutual_friend_total,
+        friend2_fulfilled=score.friend2_fulfilled,
+        friend2_total=score.friend2_total,
+        mixed_language_class_count=score.mixed_language_class_count,
+        mixed_music_class_count=score.mixed_music_class_count,
+        language_minority_student_count=score.language_minority_student_count,
+        music_minority_student_count=score.music_minority_student_count,
+        review_candidate=True,
+        social_limit_met=True,
+        assignments=assignments,
+    )
+    summary = candidate_summary_from_report(candidate, len(students))
+    draft = create_assignment_draft(summary)
+    move = ManualMove("s3", "5b", "5a", lock_after_move=True, reason="fixiert")
+    impact = move_impact(draft, move, summary, students, class_configs, settings)
+    fixed_draft = apply_move(draft, move, students=students, class_configs=class_configs)
+    report = reoptimize_with_manual_fixations(
+        fixed_draft,
+        students,
+        class_configs,
+        settings,
+        base_candidate_name="E: E beide +1",
+        manual_move_impacts=[impact],
+    )
+
+    exported = export_excel(
+        None,
+        students,
+        report.solver_result.assignments,
+        class_configs,
+        report.after_score,
+        [],
+        profile_slack_reports=[candidate],
+        manual_moves=report.manual_moves,
+        manual_move_impacts=report.manual_move_impacts,
+        base_candidate_name=report.base_candidate_name,
+        reoptimization_report=report,
+        settings=settings,
+    )
+    workbook = load_workbook(io.BytesIO(exported))
+    overview = _overview_values(workbook)
+
+    assert overview["Lösungsstand"] == "neu optimierte Lösung mit Fixierungen"
+    assert overview["Neuoptimierung"] == "durchgeführt"
+    assert overview["Anzahl manueller Moves"] == 1
+    assert workbook["Manuelle Änderungen"]["E2"].value == "ja"
 
 
 def _manual_export_workbook(*, lock_move: bool = False):

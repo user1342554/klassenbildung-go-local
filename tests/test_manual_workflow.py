@@ -123,7 +123,12 @@ def test_full_manual_workflow_note_rule_solve_review_draft_export() -> None:
     assert workbook["Notizen"]["C2"].value == "in Regel umgewandelt"
     assert workbook["Manuelle Änderungen"]["F2"].value == "pädagogisch fixiert"
     assert workbook["Manuelle Änderungen"]["G1"].value == "Delta ohne Wunschfreund"
-    assert workbook["Übersicht"]["B3"].value == "ja"
+    overview = {
+        row[0]: row[1]
+        for row in workbook["Übersicht"].iter_rows(min_row=2, values_only=True)
+        if row[0]
+    }
+    assert overview["Manuell verändert"] == "ja"
 
 
 def _first_non_blocked_move(

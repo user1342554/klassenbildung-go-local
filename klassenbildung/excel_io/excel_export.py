@@ -41,6 +41,7 @@ def export_excel(
     manual_moves: list | None = None,
     manual_move_impacts: list | None = None,
     base_candidate_name: str | None = None,
+    reoptimization_report: object | None = None,
 ) -> bytes:
     workbook = _load_or_create_workbook(source_workbook_bytes)
     basis = workbook[BASIS_SHEET_NAME]
@@ -64,6 +65,7 @@ def export_excel(
         manual_moves,
         manual_move_impacts,
         base_candidate_name,
+        reoptimization_report,
     )
     _write_score_sheet(
         workbook,
@@ -99,6 +101,7 @@ def _write_overview_sheet(
     manual_moves: list,
     manual_move_impacts: list,
     base_candidate_name: str | None,
+    reoptimization_report: object | None,
 ) -> None:
     if "Übersicht" in workbook.sheetnames:
         del workbook["Übersicht"]
@@ -120,6 +123,8 @@ def _write_overview_sheet(
     )
     rows = [
         ("Basis-Kandidat", base_candidate_name or _base_candidate_from_impacts(manual_move_impacts) or "-"),
+        ("Lösungsstand", _solution_source_label(manual_moves, reoptimization_report)),
+        ("Neuoptimierung", _reoptimization_label(reoptimization_report)),
         ("Manuell verändert", "ja" if manual_moves else "nein"),
         ("Anzahl manueller Moves", len(manual_moves)),
         ("Anzahl Draft-Fixierungen", sum(1 for move in manual_moves if getattr(move, "lock_after_move", False))),
@@ -139,6 +144,25 @@ def _base_candidate_from_impacts(manual_move_impacts: list) -> str | None:
     if not summary:
         return None
     return f"{summary.key}: {summary.name}"
+
+
+def _solution_source_label(manual_moves: list, reoptimization_report: object | None) -> str:
+    if reoptimization_report is not None and getattr(reoptimization_report, "succeeded", False):
+        return "neu optimierte Lösung mit Fixierungen"
+    if manual_moves:
+        return "manuell bearbeiteter Entwurf"
+    return "Original-Kandidat"
+
+
+def _reoptimization_label(reoptimization_report: object | None) -> str:
+    if reoptimization_report is None:
+        return "nicht durchgeführt"
+    if getattr(reoptimization_report, "succeeded", False):
+        return "durchgeführt"
+    flow_state = getattr(reoptimization_report, "flow_state", None)
+    if flow_state is not None:
+        return str(flow_state.value)
+    return "ohne brauchbares Ergebnis"
 
 
 def _load_or_create_workbook(source_workbook_bytes: bytes | None) -> Workbook:
