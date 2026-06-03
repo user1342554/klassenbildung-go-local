@@ -1302,6 +1302,7 @@ def _editor_tab(settings: OptimizationSettings) -> None:
         _render_manual_rules_panel(result.students, st.session_state.class_configs, settings, "editor")
     with draft_rule_col:
         _render_editor_draft_rule_summary(draft, result.students)
+        _render_editor_note_status_summary(result.students)
 
     table_col, detail_col = st.columns([2, 1])
     with table_col:
@@ -1514,6 +1515,34 @@ def _render_editor_draft_rule_summary(draft, students: list[Student]) -> None:
     frame = pd.DataFrame(manual_rules_module.manual_rule_entry_records(entries, students)).drop(columns=["id"])
     st.dataframe(frame, width="stretch", hide_index=True)
     st.caption("Diese Fixierungen gelten im aktuellen Draft und erscheinen im Export. Neuoptimierung mit Fixierungen kommt im nächsten Schritt.")
+
+
+def _render_editor_note_status_summary(students: list[Student]) -> None:
+    st.markdown("**Notizstatus**")
+    note_students = [student for student in students if student_has_manual_note(student)]
+    if not note_students:
+        st.success("Keine manuellen Notizen vorhanden.")
+        return
+    statuses = _note_review_status_by_student()
+    counts = Counter(
+        statuses.get(student.internal_id, manual_rules_module.NoteReviewStatus.UNREVIEWED)
+        for student in note_students
+    )
+    rows = [
+        {
+            "Status": "ungeprüft",
+            "Anzahl": counts.get(manual_rules_module.NoteReviewStatus.UNREVIEWED, 0),
+        },
+        {
+            "Status": "als Hinweis behalten",
+            "Anzahl": counts.get(manual_rules_module.NoteReviewStatus.KEPT_AS_NOTE, 0),
+        },
+        {
+            "Status": "in Regel umgewandelt",
+            "Anzahl": counts.get(manual_rules_module.NoteReviewStatus.CONVERTED_TO_RULE, 0),
+        },
+    ]
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 
 def _move_impact_frame(impact) -> pd.DataFrame:
