@@ -38,7 +38,7 @@ def validate_students(
         return ValidationResult(messages)
 
     messages.extend(_validate_student_fields(students))
-    messages.extend(_validate_manual_rules(students, manual_rules))
+    messages.extend(_validate_manual_rules(students, class_configs, settings, manual_rules))
 
     if not class_configs:
         messages.append(ValidationMessage("FEHLER", "Keine Klassen konfiguriert."))
@@ -153,14 +153,14 @@ def _validate_student_fields(students: list[Student]) -> list[ValidationMessage]
                     student.primary_class,
                 )
             )
-        if student.comment:
+        if _student_has_manual_note(student):
             messages.append(
                 ValidationMessage(
                     "WARNUNG",
                     "Bemerkung muss manuell geprüft werden.",
                     student.row_number,
                     "Bemerkung",
-                    student.comment,
+                    _student_effective_note_text(student),
                 )
             )
     return messages
@@ -279,14 +279,117 @@ def _student_allowed_by_hard_profiles(
 
 def _validate_manual_rules(
     students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
     manual_rules: list[ManualRule],
 ) -> list[ValidationMessage]:
     messages: list[ValidationMessage] = []
+    class_by_id = {config.class_id: config for config in class_configs}
+    fixed_class_by_student: dict[str, str] = {}
+    fixed_count_by_class: Counter[str] = Counter()
+    together_pairs: set[tuple[str, str]] = set()
+    separate_pairs: set[tuple[str, str]] = set()
+
     for rule in manual_rules:
-        if not resolve_student_ref(students, rule.student_a):
+        student_a = resolve_student_ref(students, rule.student_a)
+        student_b = resolve_student_ref(students, rule.student_b)
+        if not student_a:
             messages.append(ValidationMessage("FEHLER", "Manuelle Regel verweist auf unbekannten Schüler."))
-        if rule.student_b and not resolve_student_ref(students, rule.student_b):
+            continue
+        if rule.student_b and not student_b:
             messages.append(ValidationMessage("FEHLER", "Manuelle Regel verweist auf unbekannten zweiten Schüler."))
         if rule.type == "FIX_CLASS" and not rule.class_id:
             messages.append(ValidationMessage("FEHLER", "Fixierungsregel hat keine Zielklasse."))
+        if rule.type == "FIX_CLASS" and rule.class_id:
+            config = class_by_id.get(rule.class_id)
+            if not config:
+                messages.append(ValidationMessage("FEHLER", f"Fixierungsregel verweist auf unbekannte Klasse {rule.class_id}."))
+                continue
+            previous_class = fixed_class_by_student.get(student_a.internal_id)
+            if previous_class and previous_class != rule.class_id:
+                messages.append(
+                    ValidationMessage(
+                        "FEHLER",
+                        f"{student_a.display_label} ist widersprüchlich auf {previous_class} und {rule.class_id} fixiert.",
+                    )
+                )
+            fixed_class_by_student[student_a.internal_id] = rule.class_id
+            fixed_count_by_class[rule.class_id] += 1
+            if not _student_allowed_by_hard_profiles(student_a, config, settings):
+                messages.append(
+                    ValidationMessage(
+                        "FEHLER",
+                        f"Fixierung widerspricht harter Profilregel: {student_a.display_label} passt nicht zu {rule.class_id}.",
+                    )
+                )
+        if rule.type == "TOGETHER" and student_b:
+            together_pairs.add(_manual_pair_key(student_a, student_b))
+        if rule.type == "SEPARATE" and student_b:
+            separate_pairs.add(_manual_pair_key(student_a, student_b))
+
+    for class_id, count in fixed_count_by_class.items():
+        config = class_by_id.get(class_id)
+        if config and count > config.size_max:
+            messages.append(
+                ValidationMessage(
+                    "FEHLER",
+                    f"Zu viele Fixierungen fuer {class_id}: {count} fixiert, maximal {config.size_max} erlaubt.",
+                )
+            )
+
+    for pair in sorted(together_pairs & separate_pairs):
+        student_a, student_b = _students_from_pair(students, pair)
+        messages.append(
+            ValidationMessage(
+                "FEHLER",
+                f"Zusammen- und Trennen-Regel widersprechen sich: {student_a.display_label} / {student_b.display_label}.",
+            )
+        )
+
+    for pair in sorted(together_pairs):
+        student_a, student_b = _students_from_pair(students, pair)
+        class_a = fixed_class_by_student.get(student_a.internal_id)
+        class_b = fixed_class_by_student.get(student_b.internal_id)
+        if class_a and class_b and class_a != class_b:
+            messages.append(
+                ValidationMessage(
+                    "FEHLER",
+                    f"Zusammenregel widerspricht Fixierung: {student_a.display_label} in {class_a}, "
+                    f"{student_b.display_label} in {class_b}.",
+                )
+            )
+
+    for pair in sorted(separate_pairs):
+        student_a, student_b = _students_from_pair(students, pair)
+        class_a = fixed_class_by_student.get(student_a.internal_id)
+        class_b = fixed_class_by_student.get(student_b.internal_id)
+        if class_a and class_b and class_a == class_b:
+            messages.append(
+                ValidationMessage(
+                    "FEHLER",
+                    f"Trennungsregel widerspricht Fixierung: {student_a.display_label} und "
+                    f"{student_b.display_label} sind beide in {class_a} fixiert.",
+                )
+            )
     return messages
+
+
+def _manual_pair_key(student_a: Student, student_b: Student) -> tuple[str, str]:
+    return tuple(sorted((student_a.internal_id, student_b.internal_id)))
+
+
+def _students_from_pair(students: list[Student], pair: tuple[str, str]) -> tuple[Student, Student]:
+    by_id = {student.internal_id: student for student in students}
+    return by_id[pair[0]], by_id[pair[1]]
+
+
+def _student_effective_note_text(student: object) -> str | None:
+    note_text = getattr(student, "note_text", None)
+    if note_text is not None:
+        return note_text
+    return getattr(student, "comment", None)
+
+
+def _student_has_manual_note(student: object) -> bool:
+    note_text = _student_effective_note_text(student)
+    return bool(note_text and note_text.strip())

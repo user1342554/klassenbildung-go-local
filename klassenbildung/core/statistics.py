@@ -19,6 +19,12 @@ def build_import_statistics(students: list[Student]) -> dict[str, object]:
         "gender": count_values(students, lambda student: student.gender),
         "music": count_values(students, lambda student: student.music_profile),
         "support_count": sum(1 for student in students if student.is_support),
-        "comment_count": sum(1 for student in students if student.comment),
+        "comment_count": sum(1 for student in students if _student_has_manual_note(student)),
     }
 
+
+def _student_has_manual_note(student: object) -> bool:
+    note_text = getattr(student, "note_text", None)
+    if note_text is None:
+        note_text = getattr(student, "comment", None)
+    return bool(note_text and note_text.strip())

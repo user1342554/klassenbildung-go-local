@@ -70,10 +70,10 @@ def comments_to_frame(students: list[Student]) -> pd.DataFrame:
                 "Nr": student.nr,
                 "Name": student.display_label,
                 "aktuelle Klasse": student.original_class,
-                "Bemerkung": student.comment,
+                "Bemerkung": _student_effective_note_text(student),
             }
             for student in students
-            if student.comment
+            if _student_has_manual_note(student)
         ]
     )
 
@@ -104,13 +104,35 @@ def score_to_class_frame(score_report: ScoreReport) -> pd.DataFrame:
                 "F": report.language_counts.get("F", 0),
                 "L": report.language_counts.get("L", 0),
                 "F/L gemischt": "ja" if report.is_language_mixed else "nein",
+                "F/L Minderheit": report.language_minority_count,
                 "Reg": report.music_counts.get("Reg", 0),
                 "B": report.music_counts.get("B", 0),
                 "S": report.music_counts.get("S", 0),
                 "G": report.music_counts.get("G", 0),
                 "Musik gemischt": "ja" if report.is_music_mixed else "nein",
+                "Musik Minderheit": report.music_minority_count,
+                "Musik Profilfehlmenge": report.music_focus_shortfall,
                 "R": report.support_count,
+                "größte Grundschule": _largest_count(report.school_counts),
+                "größte Grundschulklasse": _largest_count(report.primary_class_counts),
             }
             for report in score_report.class_reports
         ]
     )
+
+
+def _largest_count(counts: dict[str, int]) -> int:
+    values = [count for key, count in counts.items() if key != "leer"]
+    return max(values, default=0)
+
+
+def _student_effective_note_text(student: object) -> str | None:
+    note_text = getattr(student, "note_text", None)
+    if note_text is not None:
+        return note_text
+    return getattr(student, "comment", None)
+
+
+def _student_has_manual_note(student: object) -> bool:
+    note_text = _student_effective_note_text(student)
+    return bool(note_text and note_text.strip())

@@ -42,7 +42,14 @@ Version 0.1 bis 0.3 sind als erster lauffähiger Kern angelegt:
 - Anzeige von Bemerkungen ohne automatische Interpretation
 - konfigurierbare Klassenprofile und Gewichtungen über lokale JSON-Dateien
 - einfacher Optimierer mit OR-Tools, plus Fallback ohne OR-Tools
-- Sprach- und Musikangaben bleiben beim Schueler erhalten; F/L- und Musik-Mischklassen sind moeglich, werden aber gezielt minimiert
+- Sprach- und Musikangaben bleiben beim Schueler erhalten; F/L- und Musik-Mischklassen sind moeglich und werden als weiche Praeferenzen bewertet
+- Mischklassen werden nach Schwere bewertet: Grundstrafe pro Mischklasse plus Minderheits-Schueler in der Mischung
+- Freundschaften werden als Paarbeziehungen bewertet; ein gegenseitiger Wunsch wird nicht zusaetzlich doppelt als Einzelwunsch addiert
+- Kinder ohne einen einzigen Wunschfreund in der neuen Klasse erhalten eine eigene hohe Strafe
+- R-Verteilung, Geschlecht und Grundschulballungen werden toleranz- bzw. schwellenbasiert und nicht mehr rein linear bewertet
+- Staat/Nationalitaet und Religion sind keine aktiven Optimierungskriterien
+- lexikografische Optimierung: erst F/L-Mischklassen, dann Musik-Mischklassen, dann Kinder ohne Wunschfreund, gegenseitige Freunde, Freund 1, danach Mischungs-Schwere, Freund 2 und Restkriterien
+- Ergebnisbericht mit Profilminimum, Strafpunkten je Kategorie, Minderheitswerten, R-Verteilung, profilkonfliktigen Freundschaften und Solverstatus
 - Excel-Export mit aktualisiertem `Basis`-Blatt und neuen Klassenblättern
 
 ## Datenschutzgrenzen

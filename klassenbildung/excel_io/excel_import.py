@@ -140,6 +140,7 @@ def build_student(row_number: int, raw: dict[str, Any]) -> Student:
     music_profile = normalize_music_profile(raw.get("music_profile")) or derive_music_profile(raw)
     nr = normalize_string(raw.get("nr"))
     birthdate = _normalize_birthdate(raw.get("birthdate"))
+    comment = normalize_string(raw.get("comment"))
     return Student(
         internal_id=f"row-{row_number}",
         row_number=row_number,
@@ -158,7 +159,8 @@ def build_student(row_number: int, raw: dict[str, Any]) -> Student:
         primary_class=normalize_string(raw.get("primary_class")),
         friend1=normalize_string(raw.get("friend1")),
         friend2=normalize_string(raw.get("friend2")),
-        comment=normalize_string(raw.get("comment")),
+        comment=comment,
+        note_text=comment,
         is_support=eligibility == "R",
     )
 
@@ -185,4 +187,3 @@ def _class_sort_key(class_id: str) -> tuple[int, str]:
     number = "".join(character for character in class_id if character.isdigit())
     letter = "".join(character for character in class_id if character.isalpha())
     return (int(number) if number else 0, letter)
-

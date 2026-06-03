@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from klassenbildung.core.constants import DEFAULT_WEIGHTS
-from klassenbildung.core.models import ClassConfig, OptimizationSettings
+from klassenbildung.core.models import ClassConfig, ClassSizePolicy, OptimizationSettings
 from klassenbildung.core.normalization import normalize_class_id, normalize_language, normalize_music_profile
 
 CONFIG_DIR = Path("config")
@@ -60,6 +60,17 @@ def save_settings(settings: OptimizationSettings) -> None:
 
 
 def _class_config_from_dict(class_id: str, payload: dict[str, Any]) -> ClassConfig:
+    size_policy_payload = payload.get("size_policy") or {}
+    size_policy = (
+        ClassSizePolicy(
+            target_size=int(size_policy_payload.get("target_size", payload.get("size_max", 30))),
+            comfort_tolerance=int(size_policy_payload.get("comfort_tolerance", 0)),
+            hard_tolerance=int(size_policy_payload.get("hard_tolerance", 0)),
+            soft_weight=int(size_policy_payload.get("soft_weight", 0)),
+        )
+        if size_policy_payload
+        else None
+    )
     return ClassConfig(
         class_id=normalize_class_id(class_id) or class_id,
         label=str(payload.get("label") or class_id),
@@ -75,6 +86,7 @@ def _class_config_from_dict(class_id: str, payload: dict[str, Any]) -> ClassConf
             for value in (normalize_language(item) for item in payload.get("languages_allowed", []))
             if value
         ],
+        size_policy=size_policy,
     )
 
 
@@ -94,6 +106,7 @@ def save_class_configs(class_configs: list[ClassConfig]) -> None:
             "languages_allowed": config.languages_allowed,
             "size_min": config.size_min,
             "size_max": config.size_max,
+            "size_policy": asdict(getattr(config, "size_policy", None)) if getattr(config, "size_policy", None) else None,
         }
         for config in class_configs
     }
@@ -105,28 +118,59 @@ def generate_class_configs(
     total_students: int,
     class_count: int = 7,
     year: int = 5,
-    max_size: int = 30,
+    target_size: int | None = None,
+    comfort_tolerance: int = 0,
+    hard_tolerance: int = 0,
+    class_size_soft_weight: int = 500,
     existing_profiles: list[ClassConfig] | None = None,
 ) -> list[ClassConfig]:
     existing_by_id = {config.class_id: config for config in existing_profiles or []}
-    basis = total_students // class_count if class_count else 0
-    rest = total_students % class_count if class_count else 0
+    target = target_size if target_size is not None else math.ceil(total_students / class_count) if class_count else 0
+    hard_tolerance = max(0, hard_tolerance)
+    comfort_tolerance = max(0, min(comfort_tolerance, hard_tolerance))
+    size_policy = ClassSizePolicy(
+        target_size=target,
+        comfort_tolerance=comfort_tolerance,
+        hard_tolerance=hard_tolerance,
+        soft_weight=max(0, class_size_soft_weight),
+    )
+    hard_min = max(0, target - hard_tolerance)
+    hard_max = max(target, target + hard_tolerance)
     configs: list[ClassConfig] = []
 
     for index in range(class_count):
         class_id = f"{year}{chr(ord('a') + index)}"
-        target_size = basis + (1 if index < rest else 0)
         profile = existing_by_id.get(class_id)
         configs.append(
             ClassConfig(
                 class_id=class_id,
                 label=profile.label if profile else class_id,
-                size_min=target_size,
-                size_max=max(max_size, target_size),
+                size_min=hard_min,
+                size_max=hard_max,
                 music_allowed=profile.music_allowed if profile else [],
                 languages_allowed=profile.languages_allowed if profile else [],
+                size_policy=size_policy,
             )
         )
+
+    if configs and sum(config.size_min for config in configs) > total_students:
+        overage = sum(config.size_min for config in configs) - total_students
+        adjusted: list[ClassConfig] = []
+        for config in reversed(configs):
+            reduce_by = min(overage, config.size_min)
+            overage -= reduce_by
+            adjusted.append(
+                ClassConfig(
+                    class_id=config.class_id,
+                    label=config.label,
+                    size_min=config.size_min - reduce_by,
+                    size_max=config.size_max,
+                    music_allowed=config.music_allowed,
+                    languages_allowed=config.languages_allowed,
+                    size_policy=getattr(config, "size_policy", None),
+                )
+            )
+        configs = list(reversed(adjusted))
 
     if configs and sum(config.size_max for config in configs) < total_students:
         needed = math.ceil(total_students / len(configs))
@@ -138,6 +182,7 @@ def generate_class_configs(
                 size_max=max(config.size_max, needed),
                 music_allowed=config.music_allowed,
                 languages_allowed=config.languages_allowed,
+                size_policy=getattr(config, "size_policy", None),
             )
             for config in configs
         ]
