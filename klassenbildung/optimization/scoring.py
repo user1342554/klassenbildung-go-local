@@ -4,6 +4,7 @@ import math
 from collections import Counter, defaultdict
 from typing import Callable
 
+from klassenbildung.core.normalization import normalize_primary_class
 from klassenbildung.core.models import (
     ClassConfig,
     ClassReport,
@@ -187,7 +188,7 @@ def _build_class_report(class_id: str, students: list[Student]) -> ClassReport:
         music_focus_shortfall=_music_focus_shortfall(music_counts),
         support_count=sum(1 for student in students if student.is_support),
         school_counts=_counter(students, lambda student: student.school),
-        primary_class_counts=_counter(students, lambda student: student.primary_class),
+        primary_class_counts=_counter(students, _primary_school_class_key),
         religion_counts=_counter(students, lambda student: student.religion),
         nationality_counts=_counter(students, lambda student: student.nationality),
     )
@@ -226,6 +227,14 @@ def _music_focus_shortfall(music_counts: dict[str, int]) -> int:
 
 def _counter(students: list[Student], getter: Callable[[Student], str | None]) -> dict[str, int]:
     return dict(Counter(getter(student) or "leer" for student in students))
+
+
+def _primary_school_class_key(student: Student) -> str | None:
+    primary_class = normalize_primary_class(student.primary_class)
+    if not primary_class:
+        return None
+    school = (student.school or "unbekannte Schule").strip() or "unbekannte Schule"
+    return f"{school} / {primary_class}"
 
 
 def _score_friend_requests(
@@ -511,6 +520,11 @@ def _score_manual_rule(
         return
     if rule.type == "FIX_CLASS" and assignments.get(student_a.internal_id) != rule.class_id:
         hard_violations.append(f"{student_a.display_label}: Fixierung auf {rule.class_id} verletzt")
+    if rule.type == "ALLOW_CLASSES" and rule.class_ids:
+        class_id = assignments.get(student_a.internal_id)
+        if class_id not in set(rule.class_ids):
+            allowed = ", ".join(rule.class_ids)
+            hard_violations.append(f"{student_a.display_label}: erlaubte Klassen {allowed} verletzt")
     if rule.type == "TOGETHER" and student_b:
         if assignments.get(student_a.internal_id) != assignments.get(student_b.internal_id):
             hard_violations.append(

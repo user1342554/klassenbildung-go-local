@@ -184,7 +184,10 @@ def student_effective_note_text(student: object) -> str | None:
 
 
 def _manual_rule_entry_id(rule: ManualRule, source: ManualRuleSource, note_student_id: str | None) -> str:
-    raw = f"{source}|{note_student_id or ''}|{rule.type}|{rule.student_a}|{rule.student_b or ''}|{rule.class_id or ''}"
+    raw = (
+        f"{source}|{note_student_id or ''}|{rule.type}|{rule.student_a}|"
+        f"{rule.student_b or ''}|{rule.class_id or ''}|{','.join(rule.class_ids)}"
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
@@ -193,12 +196,15 @@ def _rule_type_label(rule_type: str) -> str:
         "SEPARATE": "Trennen",
         "TOGETHER": "Zusammen",
         "FIX_CLASS": "Fixierung",
+        "ALLOW_CLASSES": "Erlaubte Klassen",
     }.get(rule_type, rule_type)
 
 
 def _rule_target_label(rule: ManualRule, students: list[Student]) -> str:
     if rule.type == "FIX_CLASS":
         return rule.class_id or "-"
+    if rule.type == "ALLOW_CLASSES":
+        return ", ".join(rule.class_ids) or "-"
     return _student_label(students, rule.student_b)
 
 

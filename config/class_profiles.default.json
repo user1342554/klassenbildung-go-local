@@ -1,50 +1,50 @@
 {
   "5a": {
-    "label": "5a",
-    "music_allowed": ["Reg", "B", "S", "G"],
+    "label": "5a S/Reg + F/L",
+    "music_allowed": ["Reg", "S"],
     "languages_allowed": ["F", "L"],
     "size_min": 30,
     "size_max": 30
   },
   "5b": {
-    "label": "5b",
-    "music_allowed": ["Reg", "B", "S", "G"],
-    "languages_allowed": ["F", "L"],
+    "label": "5b S/Reg + F",
+    "music_allowed": ["Reg", "S"],
+    "languages_allowed": ["F"],
     "size_min": 30,
     "size_max": 30
   },
   "5c": {
-    "label": "5c",
-    "music_allowed": ["Reg", "B", "S", "G"],
+    "label": "5c B/Reg + F/L",
+    "music_allowed": ["Reg", "B"],
     "languages_allowed": ["F", "L"],
     "size_min": 30,
     "size_max": 30
   },
   "5d": {
-    "label": "5d",
-    "music_allowed": ["Reg", "B", "S", "G"],
-    "languages_allowed": ["F", "L"],
+    "label": "5d B/Reg + F",
+    "music_allowed": ["Reg", "B"],
+    "languages_allowed": ["F"],
     "size_min": 30,
     "size_max": 30
   },
   "5e": {
-    "label": "5e",
-    "music_allowed": ["Reg", "B", "S", "G"],
+    "label": "5e G/Reg + F/L",
+    "music_allowed": ["Reg", "G"],
     "languages_allowed": ["F", "L"],
     "size_min": 30,
     "size_max": 30
   },
   "5f": {
-    "label": "5f",
-    "music_allowed": ["Reg", "B", "S", "G"],
-    "languages_allowed": ["F", "L"],
+    "label": "5f G/Reg + F",
+    "music_allowed": ["Reg", "G"],
+    "languages_allowed": ["F"],
     "size_min": 30,
     "size_max": 30
   },
   "5g": {
-    "label": "5g",
-    "music_allowed": ["Reg", "B", "S", "G"],
-    "languages_allowed": ["F", "L"],
+    "label": "5g G/Reg + F",
+    "music_allowed": ["Reg", "G"],
+    "languages_allowed": ["F"],
     "size_min": 29,
     "size_max": 30
   }

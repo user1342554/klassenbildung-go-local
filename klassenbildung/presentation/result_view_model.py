@@ -15,12 +15,14 @@ class CandidateRole(StrEnum):
 class CandidateSource(StrEnum):
     STRICT_SEARCH = "strict_search"
     SLACK_SEARCH = "slack_search"
+    CACHED_INCUMBENT = "cached_incumbent"
     CARRIED_CANDIDATE = "carried_candidate"
     REFINEMENT = "refinement"
     UNKNOWN = "unknown"
 
 
 VARIANT_KEYS = {
+    "Exportierte Klassenliste": "X",
     "A streng": "A",
     "B Musik +1": "B",
     "C Musik +2": "C",
@@ -116,6 +118,8 @@ def _candidate_source(source: str | None) -> CandidateSource:
         return CandidateSource.SLACK_SEARCH
     if source == "strict_search":
         return CandidateSource.STRICT_SEARCH
+    if source in {"cached_incumbent", "seeded_incumbent"}:
+        return CandidateSource.CACHED_INCUMBENT
     if source == "refinement":
         return CandidateSource.REFINEMENT
     return CandidateSource.UNKNOWN

@@ -27,6 +27,10 @@ from klassenbildung.optimization.scoring import (
 )
 
 
+ProgressCallback = Callable[[dict[str, object]], None]
+_MAIN_PROGRESS_PHASE_TOTAL = 9
+
+
 @dataclass(frozen=True)
 class _PhaseResult:
     status_name: str
@@ -60,11 +64,34 @@ _PROFILE_INCUMBENT_CACHE: dict[str, dict[str, dict[str, str]]] = {}
 _PROFILE_INCUMBENT_CACHE_LOADED = False
 
 
+def _emit_progress(
+    progress_callback: ProgressCallback | None,
+    *,
+    event: str,
+    phase_name: str,
+    phase_index: int | None = None,
+    phase_total: int = _MAIN_PROGRESS_PHASE_TOTAL,
+    status: str | None = None,
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback(
+        {
+            "event": event,
+            "phase_name": phase_name,
+            "phase_index": phase_index,
+            "phase_total": phase_total,
+            "status": status,
+        }
+    )
+
+
 def solve_assignments(
     students: list[Student],
     class_configs: list[ClassConfig],
     settings: OptimizationSettings,
     manual_rules: list[ManualRule] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> SolverResult:
     manual_rules = manual_rules or []
     try:
@@ -113,10 +140,12 @@ def solve_assignments(
         language_mixed_terms,
         "profile_language_count",
     )
+    phase_name = "1 F/L-Mischklassen minimieren"
+    _emit_progress(progress_callback, event="started", phase_name=phase_name, phase_index=1)
     profile_phase = _solve_phase(cp_model, model, language_mixed_terms, settings.solver_time_limit_seconds)
     phase_reports.append(
         _build_phase_report(
-            "1 F/L-Mischklassen minimieren",
+            phase_name,
             profile_phase,
             x,
             students,
@@ -125,13 +154,14 @@ def solve_assignments(
             manual_rules,
         )
     )
+    _emit_progress(progress_callback, event="finished", phase_name=phase_reports[-1].name, phase_index=1, status=phase_reports[-1].status)
     language_profile_report = phase_reports[-1]
     if profile_phase.status_name not in {"OPTIMAL", "FEASIBLE"}:
         return SolverResult(
             profile_phase.status_name,
             {},
             phase_reports=phase_reports,
-            message="Solver hat keine gültige Sprache-Profillösung gefunden.",
+            message="Die Berechnung hat keine gültige F/L-Profillösung gefunden.",
         )
     profile_statuses.append(profile_phase.status_name)
     language_mixed_limit = _phase_objective_limit(profile_phase)
@@ -150,10 +180,12 @@ def solve_assignments(
         music_mixed_terms,
         "profile_music_count",
     )
+    phase_name = "2 Musik-Mischklassen minimieren"
+    _emit_progress(progress_callback, event="started", phase_name=phase_name, phase_index=2)
     profile_phase = _solve_phase(cp_model, model, music_mixed_terms, settings.solver_time_limit_seconds)
     phase_reports.append(
         _build_phase_report(
-            "2 Musik-Mischklassen minimieren",
+            phase_name,
             profile_phase,
             x,
             students,
@@ -162,13 +194,14 @@ def solve_assignments(
             manual_rules,
         )
     )
+    _emit_progress(progress_callback, event="finished", phase_name=phase_reports[-1].name, phase_index=2, status=phase_reports[-1].status)
     music_profile_report = phase_reports[-1]
     if profile_phase.status_name not in {"OPTIMAL", "FEASIBLE"}:
         return SolverResult(
             profile_phase.status_name,
             {},
             phase_reports=phase_reports,
-            message="Solver hat keine gültige Musik-Profillösung gefunden.",
+            message="Die Berechnung hat keine gültige Musik-Profillösung gefunden.",
         )
     profile_statuses.append(profile_phase.status_name)
     music_mixed_limit = _phase_objective_limit(profile_phase)
@@ -196,6 +229,8 @@ def solve_assignments(
     )
 
     target_no_friend_limit = int(len(students) * 0.15)
+    target_phase_name = f"3 Freigabegrenze testen: ohne Wunschfreund <= {target_no_friend_limit}"
+    _emit_progress(progress_callback, event="started", phase_name=target_phase_name, phase_index=3)
     target_phase, target_assignments = _solve_no_friend_target_phase(
         cp_model,
         students,
@@ -206,8 +241,10 @@ def solve_assignments(
         music_mixed_limit,
         target_no_friend_limit,
         last_assignments,
+        phase_name=target_phase_name,
     )
     phase_reports.append(target_phase)
+    _emit_progress(progress_callback, event="finished", phase_name=target_phase.name, phase_index=3, status=target_phase.status)
     approval_phase_report = target_phase
     profile_slack_reports: list[ProfileSlackReport] = []
     profile_refinement_reports: list[ProfileSlackReport] = []
@@ -221,10 +258,12 @@ def solve_assignments(
         if no_friend_terms:
             model.Add(sum(no_friend_terms) <= target_no_friend_limit)
 
+    phase_name = "4 Bestes Ergebnis ohne Wunschfreund suchen"
+    _emit_progress(progress_callback, event="started", phase_name=phase_name, phase_index=4)
     social_phase = _solve_phase(cp_model, model, no_friend_terms, settings.solver_time_limit_seconds)
     phase_reports.append(
         _build_phase_report(
-            "4 Bestes Ergebnis ohne Wunschfreund suchen",
+            phase_name,
             social_phase,
             x,
             students,
@@ -233,6 +272,7 @@ def solve_assignments(
             manual_rules,
         )
     )
+    _emit_progress(progress_callback, event="finished", phase_name=phase_reports[-1].name, phase_index=4, status=phase_reports[-1].status)
     if social_phase.status_name not in {"OPTIMAL", "FEASIBLE"}:
         failed_phase_report = phase_reports[-1]
         return SolverResult(
@@ -254,7 +294,7 @@ def solve_assignments(
             profile_slack_reports=profile_slack_reports,
             profile_refinement_reports=profile_refinement_reports,
             slack_candidates=slack_candidates,
-            message="Profilminimum gefunden; Sozialphase fand keine gültige Lösung.",
+            message="Strenge Profilvariante gefunden; die soziale Prüfung fand keine gültige Lösung.",
             **profile_metadata,
             **_solution_metadata(
                 last_phase_report,
@@ -276,6 +316,8 @@ def solve_assignments(
 
     if _needs_social_diagnostics(last_score, social_phase, target_no_friend_limit):
         for ladder_limit in _target_ladder(no_friend_limit, target_no_friend_limit):
+            ladder_phase_name = f"4a Zieltreppe testen: ohne Wunschfreund <= {ladder_limit}"
+            _emit_progress(progress_callback, event="started", phase_name=ladder_phase_name, phase_index=4)
             ladder_phase, ladder_assignments = _solve_no_friend_target_phase(
                 cp_model,
                 students,
@@ -286,10 +328,17 @@ def solve_assignments(
                 music_mixed_limit,
                 ladder_limit,
                 last_assignments,
-                phase_name=f"4a Zieltreppe testen: ohne Wunschfreund <= {ladder_limit}",
+                phase_name=ladder_phase_name,
                 time_limit_seconds=_diagnostic_time_limit(settings),
             )
             phase_reports.append(ladder_phase)
+            _emit_progress(
+                progress_callback,
+                event="finished",
+                phase_name=ladder_phase.name,
+                phase_index=4,
+                status=ladder_phase.status,
+            )
             if not ladder_assignments:
                 break
             last_assignments = ladder_assignments
@@ -302,6 +351,13 @@ def solve_assignments(
             if ladder_limit <= target_no_friend_limit:
                 break
 
+    if _needs_profile_slack_search(last_score, target_no_friend_limit):
+        _emit_progress(
+            progress_callback,
+            event="started",
+            phase_name="Zusatzprüfung: Varianten mit Profil-Lockerung suchen",
+            phase_index=4,
+        )
         profile_slack_reports, profile_refinement_reports, slack_candidates = _build_profile_slack_reports(
             cp_model,
             students,
@@ -315,6 +371,12 @@ def solve_assignments(
             strict_phase=social_phase,
             strict_score=strict_social_score,
             strict_assignments=strict_social_assignments,
+        )
+        _emit_progress(
+            progress_callback,
+            event="finished",
+            phase_name="Zusatzprüfung: Varianten mit Profil-Lockerung suchen",
+            phase_index=4,
         )
 
     if _needs_social_diagnostics(last_score, social_phase, target_no_friend_limit):
@@ -341,8 +403,8 @@ def solve_assignments(
             profile_refinement_reports=profile_refinement_reports,
             slack_candidates=slack_candidates,
             message=(
-                "Strenges Profilminimum gefunden; unter strengen Profilgrenzen ist die soziale Mindestqualität "
-                "nicht freigabefähig. Mit Profil-Slack wurden soziale Prüfkandidaten gesucht."
+                "Strenge Profilvariante gefunden; mit diesen Profilgrenzen ist die soziale Mindestqualität "
+                "nicht freigabefähig. Mit Profil-Lockerung wurden soziale Prüfkandidaten gesucht."
             ),
             **profile_metadata,
             **_solution_metadata(
@@ -407,10 +469,12 @@ def solve_assignments(
         unit_weight=True,
         hint_assignments=last_assignments,
     )
+    phase_name = "5 Gegenseitige Freunde retten"
+    _emit_progress(progress_callback, event="started", phase_name=phase_name, phase_index=5)
     social_phase = _solve_phase(cp_model, model, mutual_terms, settings.solver_time_limit_seconds)
     phase_reports.append(
         _build_phase_report(
-            "5 Gegenseitige Freunde retten",
+            phase_name,
             social_phase,
             x,
             students,
@@ -419,6 +483,7 @@ def solve_assignments(
             manual_rules,
         )
     )
+    _emit_progress(progress_callback, event="finished", phase_name=phase_reports[-1].name, phase_index=5, status=phase_reports[-1].status)
     if social_phase.status_name not in {"OPTIMAL", "FEASIBLE"}:
         failed_phase_report = phase_reports[-1]
         return SolverResult(
@@ -440,7 +505,7 @@ def solve_assignments(
             profile_slack_reports=profile_slack_reports,
             profile_refinement_reports=profile_refinement_reports,
             slack_candidates=slack_candidates,
-            message="Profilminimum gefunden; gegenseitige Freundschaftsphase fand keine gültige Lösung.",
+            message="Strenge Profilvariante gefunden; die Prüfung der gegenseitigen Freundschaften fand keine gültige Lösung.",
             **profile_metadata,
             **_solution_metadata(
                 last_phase_report,
@@ -471,10 +536,12 @@ def solve_assignments(
         unit_weight=True,
         hint_assignments=last_assignments,
     )
+    phase_name = "6 Freund 1 retten"
+    _emit_progress(progress_callback, event="started", phase_name=phase_name, phase_index=6)
     social_phase = _solve_phase(cp_model, model, friend1_terms, settings.solver_time_limit_seconds)
     phase_reports.append(
         _build_phase_report(
-            "6 Freund 1 retten",
+            phase_name,
             social_phase,
             x,
             students,
@@ -483,6 +550,7 @@ def solve_assignments(
             manual_rules,
         )
     )
+    _emit_progress(progress_callback, event="finished", phase_name=phase_reports[-1].name, phase_index=6, status=phase_reports[-1].status)
     if social_phase.status_name not in {"OPTIMAL", "FEASIBLE"}:
         failed_phase_report = phase_reports[-1]
         return SolverResult(
@@ -504,7 +572,7 @@ def solve_assignments(
             profile_slack_reports=profile_slack_reports,
             profile_refinement_reports=profile_refinement_reports,
             slack_candidates=slack_candidates,
-            message="Profilminimum gefunden; Freund-1-Phase fand keine gültige Lösung.",
+            message="Strenge Profilvariante gefunden; die Prüfung der ersten Freundeswünsche fand keine gültige Lösung.",
             **profile_metadata,
             **_solution_metadata(
                 last_phase_report,
@@ -544,10 +612,12 @@ def solve_assignments(
         profile_depth_terms,
         "profile_music_depth",
     )
+    phase_name = "7 Minderheiten in Mischklassen minimieren"
+    _emit_progress(progress_callback, event="started", phase_name=phase_name, phase_index=7)
     profile_phase = _solve_phase(cp_model, model, profile_depth_terms, settings.solver_time_limit_seconds)
     phase_reports.append(
         _build_phase_report(
-            "7 Minderheiten in Mischklassen minimieren",
+            phase_name,
             profile_phase,
             x,
             students,
@@ -556,6 +626,7 @@ def solve_assignments(
             manual_rules,
         )
     )
+    _emit_progress(progress_callback, event="finished", phase_name=phase_reports[-1].name, phase_index=7, status=phase_reports[-1].status)
     if profile_phase.status_name not in {"OPTIMAL", "FEASIBLE"}:
         failed_phase_report = phase_reports[-1]
         return SolverResult(
@@ -577,7 +648,7 @@ def solve_assignments(
             profile_slack_reports=profile_slack_reports,
             profile_refinement_reports=profile_refinement_reports,
             slack_candidates=slack_candidates,
-            message="Solver hat keine gültige Profil-Tiefenlösung gefunden.",
+            message="Die Berechnung hat keine gültige Verfeinerung für kleine Profilgruppen gefunden.",
             **profile_metadata,
             **_solution_metadata(
                 last_phase_report,
@@ -608,10 +679,12 @@ def solve_assignments(
         unit_weight=True,
         hint_assignments=last_assignments,
     )
+    phase_name = "8 Freund 2 retten"
+    _emit_progress(progress_callback, event="started", phase_name=phase_name, phase_index=8)
     social_phase = _solve_phase(cp_model, model, friend2_terms, settings.solver_time_limit_seconds)
     phase_reports.append(
         _build_phase_report(
-            "8 Freund 2 retten",
+            phase_name,
             social_phase,
             x,
             students,
@@ -620,6 +693,7 @@ def solve_assignments(
             manual_rules,
         )
     )
+    _emit_progress(progress_callback, event="finished", phase_name=phase_reports[-1].name, phase_index=8, status=phase_reports[-1].status)
     if social_phase.status_name not in {"OPTIMAL", "FEASIBLE"}:
         failed_phase_report = phase_reports[-1]
         return SolverResult(
@@ -641,7 +715,7 @@ def solve_assignments(
             profile_slack_reports=profile_slack_reports,
             profile_refinement_reports=profile_refinement_reports,
             slack_candidates=slack_candidates,
-            message="Profilminimum gefunden; Freund-2-Phase fand keine gültige Lösung.",
+            message="Strenge Profilvariante gefunden; die Prüfung der zweiten Freundeswünsche fand keine gültige Lösung.",
             **profile_metadata,
             **_solution_metadata(
                 last_phase_report,
@@ -760,10 +834,12 @@ def solve_assignments(
     )
     _add_keep_existing_terms(x, students, class_configs, settings.weight_keep_existing, objective_terms)
 
+    phase_name = "9 Restqualität optimieren"
+    _emit_progress(progress_callback, event="started", phase_name=phase_name, phase_index=9)
     final_phase = _solve_phase(cp_model, model, objective_terms, settings.solver_time_limit_seconds)
     phase_reports.append(
         _build_phase_report(
-            "9 Restqualität optimieren",
+            phase_name,
             final_phase,
             x,
             students,
@@ -772,6 +848,7 @@ def solve_assignments(
             manual_rules,
         )
     )
+    _emit_progress(progress_callback, event="finished", phase_name=phase_reports[-1].name, phase_index=9, status=phase_reports[-1].status)
     status_name = final_phase.status_name
 
     if status_name not in {"OPTIMAL", "FEASIBLE"}:
@@ -799,7 +876,7 @@ def solve_assignments(
             profile_slack_reports=profile_slack_reports,
             profile_refinement_reports=profile_refinement_reports,
             slack_candidates=slack_candidates,
-            message="Profil- und Sozialphasen gefunden; Restoptimierung fand im Zeitlimit keine eigene Lösung.",
+            message="Profil- und Sozialprüfung abgeschlossen; die Restqualität fand im Zeitlimit keine eigene neue Lösung.",
             **profile_metadata,
             **_solution_metadata(
                 last_phase_report,
@@ -1417,6 +1494,7 @@ def _profile_incumbent_cache_key(
                 "a": rule.student_a,
                 "b": rule.student_b,
                 "class": rule.class_id,
+                "classes": list(rule.class_ids),
             }
             for rule in manual_rules
         ],
@@ -1534,6 +1612,41 @@ def _write_profile_incumbent_cache() -> None:
         os.chmod(_PROFILE_INCUMBENT_CACHE_PATH, 0o600)
     except Exception:
         return
+
+
+def seed_profile_incumbent_assignments(
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+    assignments: dict[str, str],
+    manual_rules: list[ManualRule] | None = None,
+) -> ScoreReport:
+    manual_rules = manual_rules or []
+    score = score_solution(students, assignments, settings, class_configs, manual_rules)
+    if score.hard_violations:
+        return score
+    candidate = _profile_candidate_from_score(
+        "Gespeicherter Bestkandidat",
+        score.mixed_language_class_count,
+        score.mixed_music_class_count,
+        "FEASIBLE",
+        score.total_score,
+        None,
+        None,
+        score,
+        dict(assignments),
+        solution_source="seeded_incumbent",
+    )
+    cache_key = _profile_incumbent_cache_key(students, class_configs, settings, manual_rules)
+    _save_profile_incumbents(
+        cache_key,
+        {candidate.variant: candidate},
+        students,
+        class_configs,
+        settings,
+        manual_rules,
+    )
+    return score
 
 
 def clear_profile_incumbent_cache() -> None:
@@ -1748,7 +1861,7 @@ def _recommendation_role_for_candidate(
         return None
     if candidate.variant == "F mehr Profil-Slack":
         if candidate.dominance_source:
-            return "Mehr Profil-Slack, übernimmt besseren Incumbent"
+            return "Mehr Profil-Slack, übernimmt besseren gespeicherten Kandidaten"
         if min_isolated is not None and score.isolated_friend_request_count == min_isolated:
             return "Sozial stärkste Alternative"
         return "Mehr Profil-Slack, hohe Freundschaftsquote"
@@ -2140,6 +2253,10 @@ def _needs_social_diagnostics(score, phase: _PhaseResult, approval_limit: int) -
     return phase.relative_gap is None or phase.relative_gap > 0.20
 
 
+def _needs_profile_slack_search(score, approval_limit: int) -> bool:
+    return score.isolated_friend_request_count > approval_limit
+
+
 def _target_ladder(current_value: int, target_value: int) -> list[int]:
     if current_value <= target_value:
         return []
@@ -2334,6 +2451,11 @@ def _add_manual_rule_constraints(model, x, students, class_configs, manual_rules
         if rule.type == "FIX_CLASS" and rule.class_id:
             for c, config in enumerate(class_configs):
                 model.Add(x[(a, c)] == (1 if config.class_id == rule.class_id else 0))
+        elif rule.type == "ALLOW_CLASSES" and rule.class_ids:
+            allowed_class_ids = set(rule.class_ids)
+            for c, config in enumerate(class_configs):
+                if config.class_id not in allowed_class_ids:
+                    model.Add(x[(a, c)] == 0)
         elif rule.type == "TOGETHER" and student_b:
             b = students.index(student_b)
             for c in range(len(class_configs)):
@@ -2768,12 +2890,18 @@ def _solve_greedy_fallback(
     sizes = {config.class_id: 0 for config in class_configs}
     configs_by_id = {config.class_id: config for config in class_configs}
 
+    allowed_classes_by_student = _allowed_class_sets_by_student(manual_rules)
     for rule in manual_rules:
         if rule.type != "FIX_CLASS" or not rule.class_id:
             continue
         student = resolve_student_ref(students, rule.student_a)
         config = configs_by_id.get(rule.class_id)
-        if not student or not config or not _student_allowed(student, config, settings):
+        if (
+            not student
+            or not config
+            or not _student_allowed(student, config, settings)
+            or not _student_allowed_by_manual_class_set(student, config, allowed_classes_by_student)
+        ):
             return SolverResult("INFEASIBLE", {}, message="Fixierung ist nicht erfüllbar.")
         if sizes[rule.class_id] >= config.size_max:
             return SolverResult("INFEASIBLE", {}, message="Fixierte Klasse ist voll.")
@@ -2786,7 +2914,9 @@ def _solve_greedy_fallback(
         candidates = [
             config
             for config in class_configs
-            if _student_allowed(student, config, settings) and sizes[config.class_id] < config.size_max
+            if _student_allowed(student, config, settings)
+            and _student_allowed_by_manual_class_set(student, config, allowed_classes_by_student)
+            and sizes[config.class_id] < config.size_max
         ]
         if not candidates:
             return SolverResult(
@@ -2808,3 +2938,23 @@ def _solve_greedy_fallback(
         score_report=score,
         message="OR-Tools ist nicht installiert. Es wurde ein einfacher Fallback verwendet.",
     )
+
+
+def _allowed_class_sets_by_student(manual_rules: list[ManualRule]) -> dict[str, set[str]]:
+    allowed_by_student: dict[str, set[str]] = {}
+    for rule in manual_rules:
+        if rule.type != "ALLOW_CLASSES" or not rule.class_ids:
+            continue
+        current = allowed_by_student.get(rule.student_a)
+        rule_allowed = set(rule.class_ids)
+        allowed_by_student[rule.student_a] = rule_allowed if current is None else current & rule_allowed
+    return allowed_by_student
+
+
+def _student_allowed_by_manual_class_set(
+    student: Student,
+    config: ClassConfig,
+    allowed_classes_by_student: dict[str, set[str]],
+) -> bool:
+    allowed = allowed_classes_by_student.get(student.internal_id)
+    return allowed is None or config.class_id in allowed

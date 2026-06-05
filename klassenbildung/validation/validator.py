@@ -18,7 +18,7 @@ from klassenbildung.core.models import (
     ValidationResult,
 )
 from klassenbildung.optimization.scoring import resolve_student_ref
-from klassenbildung.validation.warnings import primary_class_looks_irregular
+from klassenbildung.validation.warnings import primary_class_looks_irregular, primary_class_normalization_label
 
 
 def validate_students(
@@ -38,6 +38,7 @@ def validate_students(
         return ValidationResult(messages)
 
     messages.extend(_validate_student_fields(students))
+    messages.extend(_validate_friend_references(students))
     messages.extend(_validate_manual_rules(students, class_configs, settings, manual_rules))
 
     if not class_configs:
@@ -70,6 +71,7 @@ def validate_students(
 def _validate_student_fields(students: list[Student]) -> list[ValidationMessage]:
     messages: list[ValidationMessage] = []
     nr_counts = Counter(student.nr for student in students if student.nr)
+    normalized_primary_classes: Counter[str] = Counter()
 
     for student in students:
         if not student.nr:
@@ -144,15 +146,9 @@ def _validate_student_fields(students: list[Student]) -> list[ValidationMessage]
                 )
             )
         if primary_class_looks_irregular(student.primary_class):
-            messages.append(
-                ValidationMessage(
-                    "WARNUNG",
-                    "Grundschulklasse wirkt uneinheitlich geschrieben.",
-                    student.row_number,
-                    "Klasse",
-                    student.primary_class,
-                )
-            )
+            label = primary_class_normalization_label(student.primary_class)
+            if label:
+                normalized_primary_classes[label] += 1
         if _student_has_manual_note(student):
             messages.append(
                 ValidationMessage(
@@ -163,6 +159,39 @@ def _validate_student_fields(students: list[Student]) -> list[ValidationMessage]
                     _student_effective_note_text(student),
                 )
             )
+    if normalized_primary_classes:
+        summary = "; ".join(
+            f"{label} ({count}x)"
+            for label, count in sorted(normalized_primary_classes.items())
+        )
+        messages.append(
+            ValidationMessage(
+                "INFO",
+                "Grundschulklassen wurden für die Ballungsbewertung normalisiert.",
+                column="Klasse",
+                value=summary,
+            )
+        )
+    return messages
+
+
+def _validate_friend_references(students: list[Student]) -> list[ValidationMessage]:
+    messages: list[ValidationMessage] = []
+    for student in students:
+        for column, label, reference in (
+            ("Freund 1", "Freundeswunsch 1", student.friend1),
+            ("Freund 2", "Freundeswunsch 2", student.friend2),
+        ):
+            if reference and not resolve_student_ref(students, reference):
+                messages.append(
+                    ValidationMessage(
+                        "WARNUNG",
+                        f"{label} ist nicht zuordenbar.",
+                        student.row_number,
+                        column,
+                        reference,
+                    )
+                )
     return messages
 
 
@@ -286,6 +315,7 @@ def _validate_manual_rules(
     messages: list[ValidationMessage] = []
     class_by_id = {config.class_id: config for config in class_configs}
     fixed_class_by_student: dict[str, str] = {}
+    allowed_classes_by_student: dict[str, set[str]] = {}
     fixed_count_by_class: Counter[str] = Counter()
     together_pairs: set[tuple[str, str]] = set()
     separate_pairs: set[tuple[str, str]] = set()
@@ -322,10 +352,61 @@ def _validate_manual_rules(
                         f"Fixierung widerspricht harter Profilregel: {student_a.display_label} passt nicht zu {rule.class_id}.",
                     )
                 )
+        if rule.type == "ALLOW_CLASSES":
+            if not rule.class_ids:
+                messages.append(ValidationMessage("FEHLER", "Klassenmengenregel hat keine erlaubten Zielklassen."))
+                continue
+            unknown_class_ids = [class_id for class_id in rule.class_ids if class_id not in class_by_id]
+            if unknown_class_ids:
+                messages.append(
+                    ValidationMessage(
+                        "FEHLER",
+                        "Klassenmengenregel verweist auf unbekannte Klasse(n): "
+                        + ", ".join(unknown_class_ids)
+                        + ".",
+                    )
+                )
+                continue
+            current_allowed = allowed_classes_by_student.get(student_a.internal_id)
+            rule_allowed = set(rule.class_ids)
+            allowed_classes_by_student[student_a.internal_id] = (
+                rule_allowed if current_allowed is None else current_allowed & rule_allowed
+            )
+            if not allowed_classes_by_student[student_a.internal_id]:
+                messages.append(
+                    ValidationMessage(
+                        "FEHLER",
+                        f"{student_a.display_label} hat widersprüchliche erlaubte Klassen.",
+                    )
+                )
+            profile_allowed = [
+                class_id
+                for class_id in rule.class_ids
+                if _student_allowed_by_hard_profiles(student_a, class_by_id[class_id], settings)
+            ]
+            if not profile_allowed:
+                messages.append(
+                    ValidationMessage(
+                        "FEHLER",
+                        f"Klassenmengenregel widerspricht harter Profilregel: {student_a.display_label} passt in keine erlaubte Klasse.",
+                    )
+                )
         if rule.type == "TOGETHER" and student_b:
             together_pairs.add(_manual_pair_key(student_a, student_b))
         if rule.type == "SEPARATE" and student_b:
             separate_pairs.add(_manual_pair_key(student_a, student_b))
+
+    for student_id, fixed_class in fixed_class_by_student.items():
+        allowed_classes = allowed_classes_by_student.get(student_id)
+        if allowed_classes is not None and fixed_class not in allowed_classes:
+            student = resolve_student_ref(students, student_id)
+            label = student.display_label if student else student_id
+            messages.append(
+                ValidationMessage(
+                    "FEHLER",
+                    f"Fixierung widerspricht erlaubten Klassen: {label} ist auf {fixed_class} fixiert.",
+                )
+            )
 
     for class_id, count in fixed_count_by_class.items():
         config = class_by_id.get(class_id)

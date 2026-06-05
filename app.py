@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import inspect
 from collections import Counter
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from time import perf_counter
 
@@ -14,12 +14,11 @@ import klassenbildung.core.models as core_models_module
 import klassenbildung.core.settings as core_settings_module
 import klassenbildung.excel_io.excel_export as excel_export_module
 import klassenbildung.presentation.candidate_review as candidate_review_module
+import klassenbildung.presentation.optimization_progress as optimization_progress_module
 import klassenbildung.presentation.candidate_summary as candidate_summary_module
-import klassenbildung.presentation.reoptimization_view as reoptimization_view_module
-import klassenbildung.services.assignment_draft as assignment_draft_module
 import klassenbildung.services.manual_rules as manual_rules_module
 import klassenbildung.services.note_rule_conversion as note_rule_conversion_module
-import klassenbildung.services.reoptimization as reoptimization_module
+import klassenbildung.validation.finality as finality_module
 from klassenbildung.core.constants import DEFAULT_WEIGHTS
 from klassenbildung.core.models import (
     ClassConfig,
@@ -39,17 +38,19 @@ from klassenbildung.core.settings import (
 from klassenbildung.core.statistics import build_import_statistics
 from klassenbildung.excel_io.excel_export import export_excel
 from klassenbildung.excel_io.excel_import import import_excel
-from klassenbildung.optimization.scoring import resolve_student_ref
+from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.optimization.solver import clear_profile_incumbent_cache, solve_assignments
 from klassenbildung.presentation.wording import (
     candidate_tradeoff_text as summary_tradeoff_text,
     candidate_warning_lines as summary_warning_lines,
 )
 from klassenbildung.services.candidate_selection import (
+    balanced_candidate as summary_balanced_candidate,
     candidate_summaries,
     decision_candidate_cards as summary_decision_candidate_cards,
     diagnostic_candidate as summary_diagnostic_candidate,
     review_candidates as summary_review_candidates,
+    social_strongest_candidate as summary_social_strongest_candidate,
 )
 from klassenbildung.ui.tables import (
     class_configs_to_frame,
@@ -67,22 +68,16 @@ def _reload_stale_project_modules() -> None:
     global coerce_settings, generate_class_configs, load_class_configs, load_settings
     global save_class_configs, save_settings
     global export_excel
-    global candidate_review_module, candidate_summary_module, reoptimization_view_module
-    global assignment_draft_module, manual_rules_module, note_rule_conversion_module, reoptimization_module
+    global candidate_review_module, candidate_summary_module
+    global optimization_progress_module
+    global manual_rules_module
+    global note_rule_conversion_module
 
     stale_core = "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
     stale_summary = not hasattr(candidate_summary_module, "candidate_summary_records")
-    stale_draft = (
-        not hasattr(assignment_draft_module, "build_candidate_review_for_draft")
-        or not hasattr(assignment_draft_module, "move_delta_rows")
-    )
+    stale_progress = not hasattr(optimization_progress_module, "progress_event_message")
     stale_manual_rules = not hasattr(manual_rules_module, "student_effective_note_text")
-    stale_reoptimization = (
-        not hasattr(reoptimization_module, "reoptimize_with_manual_fixations")
-        or not hasattr(reoptimization_module, "ReoptimizationFlowState")
-        or not hasattr(reoptimization_module, "draft_reoptimization_state")
-    )
-    stale_reoptimization_view = not hasattr(reoptimization_view_module, "reoptimization_summary_text")
+    stale_note_rules = not hasattr(note_rule_conversion_module, "suggest_note_rule_actions")
     stale_review = (
         not hasattr(candidate_review_module, "build_candidate_review_model")
         or "note_review_status_by_student"
@@ -93,19 +88,26 @@ def _reload_stale_project_modules() -> None:
     )
     stale_export = (
         "include_expert_diagnostics" not in inspect.signature(export_excel).parameters
-        or "base_candidate_name" not in inspect.signature(export_excel).parameters
-        or "reoptimization_report" not in inspect.signature(export_excel).parameters
+        or "export_source_candidate_key" not in inspect.signature(export_excel).parameters
         or not hasattr(excel_export_module, "_write_candidate_summary_sheet")
+        or not hasattr(excel_export_module, "_candidate_reports_for_export")
+        or not hasattr(excel_export_module, "_write_class_profile_sheet")
+        or not hasattr(excel_export_module, "_write_candidate_class_sheet")
+        or not hasattr(excel_export_module, "_write_candidate_decision_sheet")
+        or "zusammengefasste_varianten" not in getattr(excel_export_module, "CANDIDATE_EXPORT_FIELDS", [])
+        or "displayed_candidate_count" not in inspect.signature(excel_export_module._write_overview_sheet).parameters
+        or "selected_candidate_key" not in inspect.signature(excel_export_module._write_overview_sheet).parameters
+        or "decision_context" not in inspect.signature(excel_export_module._write_overview_sheet).parameters
+        or "class_configs" not in inspect.signature(excel_export_module._write_notes_sheet).parameters
     )
     if (
         not stale_core
         and not stale_summary
+        and not stale_progress
         and not stale_review
         and not stale_export
-        and not stale_draft
         and not stale_manual_rules
-        and not stale_reoptimization
-        and not stale_reoptimization_view
+        and not stale_note_rules
     ):
         return
 
@@ -124,28 +126,23 @@ def _reload_stale_project_modules() -> None:
         load_settings = reloaded_settings.load_settings
         save_class_configs = reloaded_settings.save_class_configs
         save_settings = reloaded_settings.save_settings
-        assignment_draft_module = importlib.reload(assignment_draft_module)
         manual_rules_module = importlib.reload(manual_rules_module)
         note_rule_conversion_module = importlib.reload(note_rule_conversion_module)
-        reoptimization_module = importlib.reload(reoptimization_module)
 
     if stale_summary:
         candidate_summary_module = importlib.reload(candidate_summary_module)
 
+    if stale_progress:
+        optimization_progress_module = importlib.reload(optimization_progress_module)
+
     if stale_review:
         candidate_review_module = importlib.reload(candidate_review_module)
-
-    if stale_draft:
-        assignment_draft_module = importlib.reload(assignment_draft_module)
 
     if stale_manual_rules:
         manual_rules_module = importlib.reload(manual_rules_module)
 
-    if stale_reoptimization:
-        reoptimization_module = importlib.reload(reoptimization_module)
-
-    if stale_reoptimization_view:
-        reoptimization_view_module = importlib.reload(reoptimization_view_module)
+    if stale_note_rules:
+        note_rule_conversion_module = importlib.reload(note_rule_conversion_module)
 
     if stale_export or stale_summary or stale_review:
         export_excel = importlib.reload(excel_export_module).export_excel
@@ -168,8 +165,19 @@ _reload_stale_project_modules()
 
 st.set_page_config(page_title="Klassenbildung", layout="wide")
 
-DUMMY_EXCEL_PATH = Path("Dummy_Klassenbildung_FakeDaten.xlsx")
+DUMMY_EXCEL_PATH = Path("DummyDaten.xlsx")
 COMMENT_REVIEW_MESSAGE = "Bemerkung muss manuell geprüft werden."
+
+
+@dataclass(frozen=True)
+class ExportCandidateOption:
+    option_id: str
+    candidate_key: str
+    mode: str
+    label: str
+    caption: str
+    assignments: dict[str, str]
+    score_report: object
 
 WEIGHT_HELP = {
     "weight_mutual_friend": (
@@ -177,7 +185,7 @@ WEIGHT_HELP = {
         "zu beiden Einzelwünschen addiert."
     ),
     "weight_friend1": (
-        "Strafwert für einen getrennten einseitigen ersten Freundeswunsch. Höher bedeutet: Der Solver trennt Freund 1 nur, "
+        "Strafwert für einen getrennten einseitigen ersten Freundeswunsch. Höher bedeutet: Die App trennt Freund 1 nur, "
         "wenn andere wichtige Ziele dagegen sprechen."
     ),
     "weight_friend2": (
@@ -294,8 +302,6 @@ def main() -> None:
             "2 Einstellungen",
             "3 Berechnen",
             "4 Ergebnis",
-            "5 Editor",
-            "6 Details",
         ]
     )
 
@@ -307,11 +313,6 @@ def main() -> None:
         _optimization_tab(settings)
     with tabs[3]:
         _result_tab(settings)
-    with tabs[4]:
-        _editor_tab(settings)
-    with tabs[5]:
-        _class_config_tab()
-        _comments_tab()
 
 
 def _init_state() -> None:
@@ -326,10 +327,6 @@ def _init_state() -> None:
     st.session_state.setdefault("note_hints_kept", set())
     st.session_state.setdefault("student_data_hash", None)
     st.session_state.setdefault("manual_rule_reset_message", None)
-    st.session_state.setdefault("editor_draft", None)
-    st.session_state.setdefault("editor_base_candidate_key", None)
-    st.session_state.setdefault("editor_move_impacts", [])
-    st.session_state.setdefault("last_reoptimization_report", None)
 
 
 def _set_import_result(result) -> None:
@@ -338,8 +335,6 @@ def _set_import_result(result) -> None:
     st.session_state.import_result = result
     st.session_state.validation_result = None
     st.session_state.solver_result = None
-    _clear_editor_state()
-    _clear_reoptimization_state()
     if old_hash and old_hash != new_hash:
         _clear_manual_rule_state()
         st.session_state.manual_rule_reset_message = (
@@ -352,18 +347,6 @@ def _clear_manual_rule_state() -> None:
     st.session_state.manual_rules = []
     st.session_state.manual_rule_entries = []
     st.session_state.note_hints_kept = set()
-    _clear_editor_state()
-    _clear_reoptimization_state()
-
-
-def _clear_editor_state() -> None:
-    st.session_state.editor_draft = None
-    st.session_state.editor_base_candidate_key = None
-    st.session_state.editor_move_impacts = []
-
-
-def _clear_reoptimization_state() -> None:
-    st.session_state.last_reoptimization_report = None
 
 
 def _manual_rules() -> list[ManualRule]:
@@ -417,15 +400,12 @@ def _store_manual_rule(
     st.session_state.manual_rule_entries = entries
     st.session_state.manual_rules = manual_rules_module.active_manual_rules(entries)
     st.session_state.solver_result = None
-    _clear_editor_state()
-    _clear_reoptimization_state()
     return changed, []
 
 
 def _current_settings() -> OptimizationSettings:
     current: OptimizationSettings = coerce_settings(st.session_state.settings)
     current = _migrate_previous_default_weights(current)
-    current = _disable_fixed_profile_routing(current)
     st.session_state.settings = current
     return current
 
@@ -451,19 +431,6 @@ def _migrate_previous_default_weights(settings: OptimizationSettings) -> Optimiz
             weight_mixed_music_class=DEFAULT_WEIGHTS["weight_mixed_music_class"],
         )
     return settings
-
-
-def _disable_fixed_profile_routing(settings: OptimizationSettings) -> OptimizationSettings:
-    return replace(
-        settings,
-        enforce_music_profile=False,
-        enforce_language_profile=False,
-        weight_music_profile=0,
-        weight_language_profile=0,
-        weight_nationality=0,
-        weight_religion=0,
-        weight_keep_existing=0,
-    )
 
 
 def _settings_tab() -> None:
@@ -505,7 +472,7 @@ def _settings_tab() -> None:
         help="Aus Wunschgröße und äußerer Grenze werden die harten Klassengrößen berechnet.",
     )
     time_limit = st.select_slider(
-        "Max. Rechenzeit pro Phase",
+        "Max. Rechenzeit pro Prüfschritt",
         options=[10, 30, 60, 120],
         value=current.solver_time_limit_seconds,
         key="settings_time_limit",
@@ -519,8 +486,8 @@ def _settings_tab() -> None:
         f"Harte Grenze: {hard_min}-{hard_max}."
     )
     st.caption(
-        "Die Rechenzeit gilt pro Solverphase. Das Modell rechnet mehrere Phasen: F/L-Minimum, Musik-Minimum, "
-        "Kinder ohne Wunschfreund, starke Freundschaften, Mischungs-Schwere und danach die Restoptimierung."
+        "Die Rechenzeit gilt pro Prüfschritt. Die App prüft nacheinander F/L, Musik, Kinder ohne Wunschfreund, "
+        "starke Freundschaften, kleinere Profilgruppen und danach die Restqualität."
     )
 
     preview_configs = generate_class_configs(
@@ -535,6 +502,25 @@ def _settings_tab() -> None:
     preview_configs = _without_generated_labels(preview_configs)
     st.dataframe(_class_size_preview_frame(preview_configs), width="stretch", hide_index=True)
 
+    st.subheader("Feste Klassenprofile")
+    st.caption(
+        "Wenn Klassen wie 5a S+F/L oder 5e G/Reg+F/L administrativ fest vorgegeben sind, "
+        "müssen diese Profile hier als harte Regeln aktiv sein. Reg ist nur dort erlaubt, wo es im Musikprofil der Klasse steht."
+    )
+    profile_col_a, profile_col_b = st.columns(2)
+    enforce_language_profile = profile_col_a.checkbox(
+        "Sprachprofile der Klassen erzwingen",
+        value=current.enforce_language_profile,
+        key="settings_enforce_language_profile",
+    )
+    enforce_music_profile = profile_col_b.checkbox(
+        "Musikprofile der Klassen erzwingen",
+        value=current.enforce_music_profile,
+        key="settings_enforce_music_profile",
+    )
+    preview_configs = _class_profile_controls(preview_configs)
+    st.dataframe(class_configs_to_frame(preview_configs), width="stretch", hide_index=True)
+
     st.subheader("Gewichtungen")
     st.info(
         "Standard ist ein mehrstufiges Modell: zuerst werden F/L-Mischklassen minimiert, danach Musik-Mischklassen, "
@@ -545,12 +531,10 @@ def _settings_tab() -> None:
         "Die Gewichte steuern danach die Schwere, den technischen Score und die Restabwägung."
     )
     if st.button("Empfohlene Gewichtungen laden", key="settings_reset_weights"):
-        current = _disable_fixed_profile_routing(replace(current, **DEFAULT_WEIGHTS))
+        current = replace(current, **DEFAULT_WEIGHTS)
         save_settings(current)
         st.session_state.settings = current
         st.session_state.solver_result = None
-        _clear_editor_state()
-        _clear_reoptimization_state()
         st.rerun()
 
     st.markdown("**Sprache und Musik**")
@@ -628,8 +612,8 @@ def _settings_tab() -> None:
         advanced = _advanced_weight_controls(current)
 
     settings = OptimizationSettings(
-        enforce_music_profile=False,
-        enforce_language_profile=False,
+        enforce_music_profile=enforce_music_profile,
+        enforce_language_profile=enforce_language_profile,
         weight_music_profile=0,
         weight_language_profile=0,
         weight_mixed_language_class=weight_mixed_language_class,
@@ -651,8 +635,6 @@ def _settings_tab() -> None:
         st.session_state.settings = settings
         st.session_state.class_configs = preview_configs
         st.session_state.solver_result = None
-        _clear_editor_state()
-        _clear_reoptimization_state()
         st.success("Einstellungen übernommen.")
         st.rerun()
 
@@ -728,7 +710,7 @@ def _weight_slider(
 
 
 def _without_generated_labels(class_configs: list[ClassConfig]) -> list[ClassConfig]:
-    return [replace(config, label=config.class_id) for config in class_configs]
+    return class_configs
 
 
 def _class_size_preview_frame(class_configs: list[ClassConfig]) -> pd.DataFrame:
@@ -748,13 +730,38 @@ def _class_size_preview_frame(class_configs: list[ClassConfig]) -> pd.DataFrame:
     )
 
 
-def _detected_import_frame(sheet_names: list[str], detected_classes: list[str]) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {"Bereich": "Blätter", "Wert": ", ".join(sheet_names) or "-"},
-            {"Bereich": "Klassen", "Wert": ", ".join(detected_classes) or "-"},
-        ]
-    )
+def _class_profile_controls(class_configs: list[ClassConfig]) -> list[ClassConfig]:
+    edited_configs: list[ClassConfig] = []
+    with st.expander("Profile je Klasse bearbeiten", expanded=False):
+        st.caption("Leere Auswahl bedeutet hier nicht 'alle', sondern: kein festes Profil für diese Klasse hinterlegt.")
+        for config in class_configs:
+            col_a, col_b = st.columns([1, 1])
+            music = col_a.multiselect(
+                f"{config.class_id} Musik",
+                options=["Reg", "B", "S", "G"],
+                default=config.music_allowed,
+                key=f"profile_music_{config.class_id}",
+            )
+            languages = col_b.multiselect(
+                f"{config.class_id} Sprache",
+                options=["F", "L"],
+                default=config.languages_allowed,
+                key=f"profile_language_{config.class_id}",
+            )
+            edited_configs.append(
+                ClassConfig(
+                    class_id=config.class_id,
+                    label=config.label,
+                    size_min=config.size_min,
+                    size_max=config.size_max,
+                    music_allowed=list(music),
+                    languages_allowed=list(languages),
+                    size_policy=getattr(config, "size_policy", None),
+                )
+            )
+    if edited_configs:
+        return edited_configs
+    return class_configs
 
 
 def _friend_wish_frame(friend_stats: dict[str, int]) -> pd.DataFrame:
@@ -808,13 +815,8 @@ def _upload_tab(settings: OptimizationSettings) -> None:
     cols[2].metric("Bemerkungen", stats["comment_count"])
     cols[3].metric("R-Markierungen", stats["support_count"])
 
-    info_col, wish_col = st.columns([1, 1])
-    with info_col:
-        st.markdown("**Erkannt**")
-        st.dataframe(_detected_import_frame(result.sheet_names, result.detected_classes), width="stretch", hide_index=True)
-    with wish_col:
-        st.markdown("**Freundeswünsche**")
-        st.dataframe(_friend_wish_frame(friend_stats), width="stretch", hide_index=True)
+    st.markdown("**Freundeswünsche**")
+    st.dataframe(_friend_wish_frame(friend_stats), width="stretch", hide_index=True)
 
     st.markdown("**Verteilungen**")
     col_a, col_b, col_c = st.columns(3)
@@ -834,11 +836,19 @@ def _upload_tab(settings: OptimizationSettings) -> None:
         st.error("Diese Datei hat blockierende Fehler.")
         st.dataframe(messages_to_frame(validation_result.errors), width="stretch", hide_index=True)
     else:
-        st.success("Datei ist für die Optimierung nutzbar.")
+        st.success("Datei ist für eine Vorschlagsrechnung nutzbar.")
+        data_blockers = finality_module.finality_data_blockers(validation_result.messages)
+        if data_blockers:
+            st.error(
+                f"Finalexport gesperrt: {len(data_blockers)} Datenblocker. "
+                "Schülernummern, Profile und nicht zuordenbare Freundeswünsche müssen vor einer Freigabe geklärt werden."
+            )
+            st.dataframe(messages_to_frame(data_blockers), width="stretch", hide_index=True)
         visible_warnings = _visible_validation_warnings(validation_result.warnings)
         if visible_warnings:
             st.warning(f"{len(visible_warnings)} Dinge bitte in der Excel-Datei prüfen.")
             st.dataframe(messages_to_frame(visible_warnings), width="stretch", hide_index=True)
+    _render_import_note_review_panel(result.students, st.session_state.class_configs, settings)
     _render_manual_rules_panel(result.students, st.session_state.class_configs, settings, "upload")
 
 
@@ -874,6 +884,38 @@ def _comments_tab() -> None:
         st.dataframe(frame, width="stretch")
 
 
+def _render_import_note_review_panel(
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+) -> None:
+    note_rows = _manual_note_rows(students, assignments={})
+    if not note_rows:
+        return
+    st.markdown("**Bemerkungen als Regeln prüfen**")
+    st.caption(
+        "Eindeutige Hinweise wie 'nur 5e möglich' oder 'nicht mit 23' werden vorgeschlagen. "
+        "Unklare Hinweise müssen bewusst ausgewählt oder als Hinweis behalten werden."
+    )
+    _render_note_status_frame("Bemerkungen", note_rows)
+    _render_note_rule_controls(note_rows, students, class_configs, settings, "upload_notes")
+
+
+def _manual_note_rows(students: list[Student], assignments: dict[str, str]) -> list:
+    statuses = _note_review_status_by_student()
+    return [
+        candidate_review_module.StudentNoteRow(
+            student_id=student.internal_id,
+            display_name=student.display_label,
+            class_id=assignments.get(student.internal_id) or student.original_class or "-",
+            note_text=student_effective_note_text(student) or "",
+            review_status=statuses.get(student.internal_id, manual_rules_module.NoteReviewStatus.UNREVIEWED),
+        )
+        for student in sorted(students, key=lambda item: (item.sort_name, item.row_number))
+        if student_has_manual_note(student)
+    ]
+
+
 def _render_manual_rules_panel(
     students: list[Student],
     class_configs: list[ClassConfig],
@@ -906,15 +948,11 @@ def _render_manual_rules_panel(
         )
         st.session_state.manual_rules = _manual_rules()
         st.session_state.solver_result = None
-        _clear_editor_state()
-        _clear_reoptimization_state()
         st.rerun()
     if action_col_b.button("Löschen", key=f"manual_rule_delete_{key_suffix}"):
         st.session_state.manual_rule_entries = manual_rules_module.delete_manual_rule_entry(entries, selected_entry.id)
         st.session_state.manual_rules = _manual_rules()
         st.session_state.solver_result = None
-        _clear_editor_state()
-        _clear_reoptimization_state()
         st.rerun()
     if st.button("Regeln zurücksetzen", key=f"manual_rule_clear_{key_suffix}"):
         _clear_manual_rule_state()
@@ -933,8 +971,6 @@ def _render_manual_rules_panel(
                 st.session_state.manual_rule_entries = updated_entries
                 st.session_state.manual_rules = _manual_rules()
                 st.session_state.solver_result = None
-                _clear_editor_state()
-                _clear_reoptimization_state()
                 st.success("Regel gespeichert. Bitte danach neu optimieren.")
                 st.rerun()
 
@@ -944,6 +980,7 @@ def _manual_rule_edit_controls(rule: ManualRule, students: list[Student], class_
         "Trennen": "SEPARATE",
         "Zusammen": "TOGETHER",
         "Fixierung": "FIX_CLASS",
+        "Erlaubte Klassen": "ALLOW_CLASSES",
     }
     current_label = next(label for label, value in rule_type_options.items() if value == rule.type)
     selected_type_label = st.selectbox(
@@ -971,6 +1008,15 @@ def _manual_rule_edit_controls(rule: ManualRule, students: list[Student], class_
             key=f"manual_rule_edit_class_{key_suffix}",
         )
         return ManualRule("FIX_CLASS", student_a, class_id=selected_class)
+    if selected_type == "ALLOW_CLASSES":
+        class_ids = [config.class_id for config in class_configs]
+        selected_classes = st.multiselect(
+            "Erlaubte Klassen",
+            options=class_ids,
+            default=[class_id for class_id in rule.class_ids if class_id in class_ids] or class_ids[:1],
+            key=f"manual_rule_edit_allowed_classes_{key_suffix}",
+        )
+        return ManualRule("ALLOW_CLASSES", student_a, class_ids=tuple(selected_classes))
 
     other_options = sorted(label for label, student_id in student_labels.items() if student_id != student_a)
     if not other_options:
@@ -1031,8 +1077,6 @@ def _class_config_tab() -> None:
             save_class_configs(edited_configs)
             st.session_state.class_configs = edited_configs
             st.session_state.solver_result = None
-            _clear_editor_state()
-            _clear_reoptimization_state()
             st.success("Klassen gespeichert.")
 
 
@@ -1050,25 +1094,35 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
         base_messages=result.messages,
     )
     if validation_result.has_errors:
-        st.error("Optimierung blockiert, weil Fehler gefunden wurden.")
+        st.error("Berechnung blockiert, weil Fehler gefunden wurden.")
         st.dataframe(messages_to_frame(validation_result.errors), width="stretch")
         return
 
     if st.button("Klassen vorschlagen", type="primary"):
         status_box = st.empty()
+        progress_bar = st.progress(0.0)
+        current_step_box = st.empty()
         started_at = perf_counter()
-        status_box.info("Optimierung läuft. Der PC rechnet gerade...")
-        with st.spinner("Klassen werden berechnet..."):
-            solver_result = solve_assignments(
-                result.students,
-                st.session_state.class_configs,
-                settings,
-                manual_rules=_manual_rules(),
+        current_step_box.info("Berechnung wird vorbereitet. Die App prüft gleich die Einteilung Schritt für Schritt.")
+
+        def _update_progress(event: dict[str, object]) -> None:
+            progress_bar.progress(optimization_progress_module.progress_fraction_for_event(event))
+            current_step_box.info(optimization_progress_module.progress_event_message(event))
+
+        solver_result = solve_assignments(
+            result.students,
+            st.session_state.class_configs,
+            settings,
+            manual_rules=_manual_rules(),
+            progress_callback=_update_progress,
         )
         st.session_state.solver_result = solver_result
-        _clear_editor_state()
-        _clear_reoptimization_state()
         elapsed = perf_counter() - started_at
+        progress_bar.progress(1.0)
+        current_step_box.success(
+            f"Berechnung abgeschlossen nach {elapsed:.1f} Sekunden. "
+            + optimization_progress_module.calculation_result_summary(solver_result, len(result.students))
+        )
         if solver_result.status in {"OPTIMAL", "FEASIBLE"}:
             verdict = _quality_verdict(solver_result, len(result.students))
             if verdict["severity"] == "error":
@@ -1082,9 +1136,10 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
                 else:
                     status_box.warning(f"Gültige Lösung nach {elapsed:.1f} Sekunden, aber nur mit Prüfung verwenden.")
             else:
-                status_box.success(f"Optimierung fertig nach {elapsed:.1f} Sekunden.")
+                status_box.success(f"Berechnung fertig nach {elapsed:.1f} Sekunden.")
         else:
-            status_box.error(f"Optimierung beendet nach {elapsed:.1f} Sekunden: {solver_result.status}")
+            status_label, status_hint = _solver_status_text(solver_result.status)
+            status_box.error(f"Berechnung beendet nach {elapsed:.1f} Sekunden: {status_label}. {status_hint}")
 
     solver_result = st.session_state.solver_result
     if solver_result:
@@ -1096,6 +1151,7 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
         st.caption(status_hint)
         if solver_result.message:
             st.info(solver_result.message)
+        _render_calculation_report(solver_result, len(result.students))
         if solver_result.score_report:
             score = solver_result.score_report
             _render_standard_result(
@@ -1129,6 +1185,7 @@ def _result_tab(settings: OptimizationSettings) -> None:
 
     score = solver_result.score_report
     _render_manual_rules_panel(result.students, st.session_state.class_configs, settings, "result")
+    _render_calculation_report(solver_result, len(result.students))
     _render_standard_result(
         solver_result,
         result.students,
@@ -1137,40 +1194,46 @@ def _result_tab(settings: OptimizationSettings) -> None:
         include_review=True,
         key_suffix="ergebnis",
     )
-    _render_reoptimization_report(st.session_state.get("last_reoptimization_report"))
 
-    export_draft = st.session_state.get("editor_draft")
-    export_assignments = solver_result.assignments
-    export_score = score
-    export_moves = []
-    export_impacts = []
-    export_base_candidate_name = None
-    reoptimization_report = st.session_state.get("last_reoptimization_report")
-    if export_draft is not None:
-        export_assignments = export_draft.current_assignments
-        export_score = assignment_draft_module.score_assignment(
-            export_draft,
-            result.students,
-            st.session_state.class_configs,
-            settings,
+    validation_result = validate_students(
+        result.students,
+        st.session_state.class_configs,
+        settings,
+        manual_rules=_manual_rules(),
+        base_messages=result.messages,
+    )
+    st.session_state.validation_result = validation_result
+    validation_messages = validation_result.messages
+    export_options = _export_candidate_options(
+        solver_result,
+        result.students,
+        st.session_state.class_configs,
+        settings,
+    )
+    if not export_options:
+        st.error("Keine exportierbare Klassenliste vorhanden.")
+        return
+    export_option = _render_export_choice(export_options)
+    export_blockers = _export_blocker_messages(
+        result.students,
+        export_option.assignments,
+        export_option.score_report,
+        validation_messages,
+        st.session_state.class_configs,
+        settings,
+    )
+    if export_blockers:
+        st.error(
+            "Finalexport gesperrt: "
+            + "; ".join(export_blockers)
+            + ". Es ist nur ein Prüfexport möglich."
         )
-        export_moves = list(export_draft.moves)
-        export_impacts = list(st.session_state.get("editor_move_impacts", []))
-        export_base_candidate_name = _export_base_candidate_name(export_draft, solver_result, len(result.students))
-        st.info("Der Export enthält die aktuellen manuellen Änderungen aus dem Editor.")
-    elif reoptimization_report is not None and reoptimization_report.succeeded:
-        export_moves = list(reoptimization_report.manual_moves)
-        export_impacts = list(reoptimization_report.manual_move_impacts)
-        export_base_candidate_name = reoptimization_report.base_candidate_name
-        st.info("Der Export enthält die Neuoptimierung mit übernommenen Fixierungen.")
-
-    validation_messages = st.session_state.validation_result.messages if st.session_state.validation_result else []
     export_bytes = export_excel(
         result.workbook_bytes,
         result.students,
-        export_assignments,
+        export_option.assignments,
         st.session_state.class_configs,
-        export_score,
+        export_option.score_report,
         validation_messages,
         solver_result.profile_baseline_report,
         solver_result.phase_reports,
@@ -1178,17 +1241,15 @@ def _result_tab(settings: OptimizationSettings) -> None:
         solver_result.profile_refinement_reports,
         include_expert_diagnostics=_expert_mode(),
         settings=settings,
-        manual_rule_entries=_manual_rule_entries_for_export(export_draft),
+        manual_rule_entries=_manual_rule_entries_for_export(),
         note_review_status_by_student=_note_review_status_by_student(),
-        manual_moves=export_moves,
-        manual_move_impacts=export_impacts,
-        base_candidate_name=export_base_candidate_name,
-        reoptimization_report=reoptimization_report,
+        export_source_candidate_key=export_option.candidate_key,
+        export_selection_mode=export_option.mode,
     )
     st.download_button(
         "Excel exportieren",
         data=export_bytes,
-        file_name="Klassenbildung_Ergebnis.xlsx",
+        file_name="Klassenbildung_Pruefstand_nicht_final.xlsx" if export_blockers else "Klassenbildung_Ergebnis.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     _render_technical_expander(
@@ -1199,6 +1260,179 @@ def _result_tab(settings: OptimizationSettings) -> None:
         score,
         "ergebnis",
     )
+
+
+def _export_candidate_options(
+    solver_result,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+) -> list[ExportCandidateOption]:
+    if not solver_result.score_report:
+        return []
+
+    student_count = len(students)
+    active_rules = manual_rules_module.active_manual_rules(_manual_rule_entries_for_export())
+    summaries = [summary for summary in candidate_summaries(solver_result, student_count) if summary.assignments]
+    scored_summaries = [
+        (
+            summary,
+            score_solution(students, summary.assignments, settings, class_configs, active_rules),
+        )
+        for summary in summaries
+    ]
+    current_candidate_key = _candidate_key_for_assignments(solver_result.assignments, summaries) or "X"
+
+    strict_option = ExportCandidateOption(
+        option_id="current_result",
+        candidate_key=current_candidate_key,
+        mode="Regelkonform",
+        label=f"Regelkonform: {current_candidate_key} - aktuelle Ergebnisliste",
+        caption=_export_option_caption(
+            "Aktuelle Ergebnisliste ohne harte Regelverletzungen. Nicht automatisch die score-beste Lösung.",
+            solver_result.score_report,
+        ),
+        assignments=dict(solver_result.assignments),
+        score_report=solver_result.score_report,
+    )
+
+    score_candidates = [
+        strict_option,
+        *[
+            _summary_export_option(
+                option_id=f"candidate_score_pool_{summary.key}",
+                mode="Kandidat",
+                summary=summary,
+                score=score,
+                caption_prefix="Dokumentierter Prüfkandidat.",
+            )
+            for summary, score in scored_summaries
+        ],
+    ]
+    score_best = min(
+        score_candidates,
+        key=lambda option: (
+            getattr(option.score_report, "total_score", 0),
+            getattr(option.score_report, "isolated_friend_request_count", 0),
+            option.candidate_key == "X",
+        ),
+    )
+
+    options = [
+        replace(
+            score_best,
+            option_id="score_best",
+            mode="Score-beste Lösung",
+            label=f"Score-beste Lösung (empfohlen): {score_best.candidate_key}",
+            caption=_export_option_caption(
+                "Niedrigster dokumentierter Punktwert in der Kandidatenbewertung.",
+                score_best.score_report,
+            ),
+        ),
+        strict_option,
+    ]
+
+    profile_minimal = summary_diagnostic_candidate(solver_result, student_count)
+    balanced = summary_balanced_candidate(solver_result, student_count)
+    social = summary_social_strongest_candidate(solver_result, student_count)
+    score_by_key = {summary.key: score for summary, score in scored_summaries}
+    if profile_minimal and profile_minimal.assignments and profile_minimal.key in score_by_key:
+        options.append(
+            _summary_export_option(
+                option_id="profile_minimal",
+                mode="Profilminimal",
+                summary=profile_minimal,
+                score=score_by_key[profile_minimal.key],
+                caption_prefix="Strengere Vergleichsrichtung mit möglichst wenigen Mischklassen.",
+            )
+        )
+    if balanced and balanced.assignments:
+        options.append(
+            _summary_export_option(
+                option_id="balanced",
+                mode="Ausgewogen",
+                summary=balanced,
+                score=score_by_key[balanced.key],
+                caption_prefix="Profilkosten und soziale Werte gemeinsam prüfen.",
+            )
+        )
+    if social and social.assignments:
+        options.append(
+            _summary_export_option(
+                option_id="social",
+                mode="Sozialoptimiert",
+                summary=social,
+                score=score_by_key[social.key],
+                caption_prefix="Stärkste soziale Kennzahlen unter den Prüfkandidaten.",
+            )
+        )
+
+    return options
+
+
+def _candidate_key_for_assignments(assignments: dict[str, str], summaries: list) -> str | None:
+    fingerprint = tuple(sorted(assignments.items()))
+    for summary in summaries:
+        if tuple(sorted(summary.assignments.items())) == fingerprint:
+            return summary.key
+    return None
+
+
+def _summary_export_option(
+    *,
+    option_id: str,
+    mode: str,
+    summary,
+    score,
+    caption_prefix: str,
+) -> ExportCandidateOption:
+    return ExportCandidateOption(
+        option_id=option_id,
+        candidate_key=summary.key,
+        mode=mode,
+        label=f"{mode}: {summary.key} - {summary.name}",
+        caption=_export_option_caption(caption_prefix, score),
+        assignments=dict(summary.assignments),
+        score_report=score,
+    )
+
+
+def _export_option_caption(prefix: str, score) -> str:
+    return (
+        f"{prefix} Punktwert {getattr(score, 'total_score', '-')}; "
+        f"ohne Wunschfreund {getattr(score, 'isolated_friend_request_count', '-')}; "
+        f"Freund 1 {_ratio_text(getattr(score, 'friend1_fulfilled', 0), getattr(score, 'friend1_total', 0))}; "
+        f"gegenseitig {_ratio_text(getattr(score, 'mutual_friend_fulfilled', 0), getattr(score, 'mutual_friend_total', 0))}."
+    )
+
+
+def _render_export_choice(options: list[ExportCandidateOption]) -> ExportCandidateOption:
+    st.markdown("**Exportgrundlage wählen**")
+    option_by_id = {option.option_id: option for option in options}
+    option_ids = list(option_by_id)
+    selected_id = st.selectbox(
+        "Welche Lösung soll exportiert werden?",
+        options=option_ids,
+        format_func=lambda option_id: option_by_id[option_id].label,
+        index=0,
+        key="export_candidate_option",
+    )
+    selected = option_by_id[selected_id]
+    score_best_key = option_by_id[option_ids[0]].candidate_key
+    st.caption(selected.caption)
+    if selected.candidate_key != score_best_key:
+        st.warning(
+            f"Achtung: Die gewählte Exportgrundlage {selected.candidate_key} ist nicht die "
+            f"score-beste dokumentierte Lösung. Score-beste Lösung: {score_best_key}."
+        )
+    else:
+        st.success("Diese Exportgrundlage ist die score-beste dokumentierte Lösung.")
+    return selected
+
+
+def _render_calculation_report(solver_result, student_count: int) -> None:
+    st.markdown("**Was die Berechnung ergeben hat**")
+    st.info(optimization_progress_module.calculation_result_summary(solver_result, student_count))
 
 
 def _render_technical_expander(
@@ -1318,574 +1552,30 @@ def _solver_debug_payload(
     }
 
 
-def _editor_tab(settings: OptimizationSettings) -> None:
-    result = st.session_state.import_result
-    solver_result = st.session_state.solver_result
-    if not result or not solver_result or not solver_result.score_report:
-        st.info("Erst ein Ergebnis berechnen.")
-        return
-
-    summaries = [summary for summary in summary_review_candidates(solver_result, len(result.students)) if summary.assignments]
-    if not summaries:
-        st.info("Kein prüfbarer Kandidat mit Klassenzuweisung vorhanden.")
-        return
-
-    st.subheader("Manuell nachsteuern")
-    st.caption("Tabellarischer Draft-Editor: Änderungen werden geprüft, bevor sie in den aktuellen Entwurf übernommen werden.")
-
-    selected_key = st.selectbox(
-        "Kandidat",
-        options=[summary.key for summary in summaries],
-        format_func=lambda key: _editor_candidate_label(key, summaries),
-        key="editor_candidate_select",
-    )
-    summary = next(item for item in summaries if item.key == selected_key)
-    draft = _editor_draft_for_summary(summary)
-    assignments = dict(draft.current_assignments)
-    score = assignment_draft_module.score_assignment(draft, result.students, st.session_state.class_configs, settings)
-
-    cols = st.columns(4)
-    cols[0].metric("Freundeswunsch 1 erfüllt", _ratio_text(score.friend1_fulfilled, score.friend1_total))
-    cols[1].metric("Freundeswunsch 2 erfüllt", _ratio_text(score.friend2_fulfilled, score.friend2_total))
-    cols[2].metric("Gegenseitig", f"{score.mutual_friend_fulfilled}/{score.mutual_friend_total}")
-    cols[3].metric("Harte Verletzungen", len(score.hard_violations))
-
-    if score.hard_violations:
-        st.error("Der aktuelle Entwurf enthält harte Regelverletzungen.")
-        st.dataframe(pd.DataFrame({"Blocker": score.hard_violations}), width="stretch", hide_index=True)
-
-    _render_reoptimization_report(st.session_state.get("last_reoptimization_report"))
-
-    class_ids = [config.class_id for config in st.session_state.class_configs]
-    if result.students:
-        st.session_state.setdefault("editor_selected_student", result.students[0].internal_id)
-
-    rule_col, draft_rule_col = st.columns([2, 1])
-    with rule_col:
-        _render_manual_rules_panel(result.students, st.session_state.class_configs, settings, "editor")
-    with draft_rule_col:
-        _render_editor_draft_rule_summary(draft, result.students)
-        _render_editor_note_status_summary(result.students)
-
-    table_col, detail_col = st.columns([2, 1])
-    with table_col:
-        st.caption("Klicke eine Zeile an oder wähle rechts eine Person aus. Verschieben passiert rechts im Detailbereich.")
-        for config in st.session_state.class_configs:
-            frame = _student_assignment_frame(result.students, assignments, class_id=config.class_id)
-            with st.expander(f"{config.class_id} ({len(frame)} Schüler)", expanded=True):
-                if frame.empty:
-                    st.info("Keine Schüler in dieser Klasse.")
-                    continue
-                event = st.dataframe(
-                    frame,
-                    width="stretch",
-                    hide_index=True,
-                    column_order=[
-                        "Nr",
-                        "Name",
-                        "Sprache",
-                        "Musik",
-                        "R",
-                        "Anmerkung",
-                        "Freundeswunsch 1 erfüllt",
-                        "Freundeswunsch 2 erfüllt",
-                        "Zufriedenheit",
-                    ],
-                    key=f"editor_table_{config.class_id}",
-                    on_select="rerun",
-                    selection_mode="single-row",
-                )
-                selected_rows = _selected_row_indexes(event)
-                if selected_rows:
-                    st.session_state.editor_selected_student = frame.iloc[selected_rows[0]]["internal_id"]
-
-    with detail_col:
-        labels = {student.display_label: student.internal_id for student in result.students}
-        label_options = sorted(labels)
-        selected_id = st.session_state.get("editor_selected_student")
-        if selected_id not in set(labels.values()) and result.students:
-            selected_id = result.students[0].internal_id
-        selected_label_by_id = {value: label for label, value in labels.items()}
-        selected_index = (
-            label_options.index(selected_label_by_id[selected_id])
-            if selected_id in selected_label_by_id
-            else 0
-        )
-        selected_label = st.selectbox("Person", options=label_options, index=selected_index)
-        selected = next(student for student in result.students if student.internal_id == labels[selected_label])
-        st.session_state.editor_selected_student = selected.internal_id
-        current_class = assignments.get(selected.internal_id, "")
-
-        st.subheader("Person")
-        person_data = {
-            "Nr": selected.nr,
-            "Name": selected.full_name,
-            "aktuelle Klasse": current_class,
-            "Sprache": selected.second_language,
-            "Musik": selected.music_profile,
-            "Geschlecht": selected.gender,
-            "R-Markierung": "ja" if selected.is_support else "nein",
-            "Grundschule": selected.school,
-            "Grundschulklasse": selected.primary_class,
-            "Freundeswunsch 1": selected.friend1,
-            "Freundeswunsch 2": selected.friend2,
-        }
-        st.table(pd.DataFrame(person_data.items(), columns=["Feld", "Wert"]))
-        if student_has_manual_note(selected):
-            st.warning(
-                f"Manuelle Notiz: {student_effective_note_text(selected)}\n\n"
-                "Diese Notiz wurde nicht automatisch ausgewertet. Bitte prüfen oder in eine Regel umwandeln."
-            )
-        else:
-            st.info("Keine Anmerkung.")
-
-        st.dataframe(
-            _student_friend_detail_frame(selected, result.students, assignments),
-            width="stretch",
-            hide_index=True,
-        )
-
-        satisfaction = _student_satisfaction(selected, result.students, assignments)
-        st.metric("Zufriedenheit", satisfaction["display"])
-        st.progress(satisfaction["percent"] / 100 if satisfaction["percent"] >= 0 else 0.0)
-
-        st.subheader("Klasse ändern")
-        target_index = class_ids.index(current_class) if current_class in class_ids else 0
-        target_class = st.selectbox("Neue Klasse", options=class_ids, index=target_index, key="editor_target_class")
-        reason = st.text_input("Grund", value="", key="editor_move_reason")
-        impact = None
-        move_error = None
-        if target_class != current_class:
-            move = assignment_draft_module.ManualMove(
-                selected.internal_id,
-                current_class,
-                target_class,
-                reason=reason.strip() or None,
-            )
-            try:
-                impact = assignment_draft_module.move_impact(
-                    draft,
-                    move,
-                    summary,
-                    result.students,
-                    st.session_state.class_configs,
-                    settings,
-                )
-            except assignment_draft_module.AssignmentDraftError as error:
-                move_error = str(error)
-            st.markdown("**Folgen dieser Änderung**")
-            if move_error:
-                st.error(move_error)
-            elif impact:
-                st.dataframe(_move_impact_frame(impact), width="stretch", hide_index=True)
-                if impact.class_size_changes:
-                    st.info(_move_class_size_change_text(impact.class_size_changes))
-                if impact.hard_violations:
-                    st.error("Nicht übernehmbar: " + " ".join(impact.hard_violations))
-                elif impact.warnings:
-                    st.warning(" ".join(warning.message for warning in impact.warnings))
-                else:
-                    st.success("Keine harte Warnung für diese Änderung.")
-            else:
-                st.info("Keine Änderung ausgewählt.")
-        action_col_a, action_col_b, action_col_c = st.columns(3)
-        cannot_apply = (
-            target_class == current_class
-            or impact is None
-            or move_error is not None
-            or not impact.applyable
-        )
-        if action_col_a.button("Übernehmen", type="primary", disabled=cannot_apply):
-            move = assignment_draft_module.ManualMove(
-                selected.internal_id,
-                current_class,
-                target_class,
-                reason=reason.strip() or None,
-            )
-            updated_draft = assignment_draft_module.apply_move(
-                draft,
-                move,
-                students=result.students,
-                class_configs=st.session_state.class_configs,
-            )
-            _store_editor_draft(updated_draft, [*st.session_state.get("editor_move_impacts", []), impact])
-            st.success(f"{selected.display_label} wurde nach {target_class} verschoben.")
-            st.rerun()
-        if action_col_b.button("Rückgängig", disabled=not draft.moves):
-            _store_editor_draft(
-                assignment_draft_module.revert_last_move(draft),
-                list(st.session_state.get("editor_move_impacts", [])[:-1]),
-            )
-            st.rerun()
-        if action_col_c.button("Übernehmen und fixieren", disabled=cannot_apply):
-            move = assignment_draft_module.ManualMove(
-                selected.internal_id,
-                current_class,
-                target_class,
-                lock_after_move=True,
-                reason=reason.strip() or "manuell fixiert",
-            )
-            updated_draft = assignment_draft_module.apply_move(
-                draft,
-                move,
-                students=result.students,
-                class_configs=st.session_state.class_configs,
-            )
-            _store_editor_draft(updated_draft, [*st.session_state.get("editor_move_impacts", []), impact])
-            st.success(f"{selected.display_label} wurde nach {target_class} verschoben und im manuellen Entwurf fixiert.")
-            st.rerun()
-
-        _render_reoptimization_controls(draft, result.students, st.session_state.class_configs, settings)
+def _manual_rule_entries_for_export():
+    return list(_manual_rule_entries())
 
 
-def _editor_candidate_label(key: str, summaries: list) -> str:
-    for summary in summaries:
-        if summary.key == key:
-            role = f" - {summary.recommendation_role}" if summary.recommendation_role else ""
-            return f"{summary.key}: {summary.name}{role}"
-    return key
-
-
-def _editor_draft_for_summary(summary):
-    draft = st.session_state.get("editor_draft")
-    if (
-        draft is None
-        or st.session_state.get("editor_base_candidate_key") != summary.key
-        or draft.base_candidate_key != summary.key
-    ):
-        draft = assignment_draft_module.create_assignment_draft(
-            summary,
-            manual_rule_entries=_manual_rule_entries(),
-        )
-        _store_editor_draft(draft, [])
-    return draft
-
-
-def _store_editor_draft(draft, impacts: list | None) -> None:
-    st.session_state.editor_draft = draft
-    st.session_state.editor_base_candidate_key = draft.base_candidate_key
-    st.session_state.editor_move_impacts = list(impacts or [])
-
-
-def _render_editor_draft_rule_summary(draft, students: list[Student]) -> None:
-    st.markdown("**Draft-Fixierungen (nur Entwurf)**")
-    fix_rules = [rule for rule in draft.manual_rules if rule.type == "FIX_CLASS"]
-    if not fix_rules:
-        st.info("Im aktuellen Draft ist noch kein Schüler fixiert.")
-        st.caption("Aktive manuelle Regeln links gelten beim nächsten Solverlauf. Draft-Fixierungen entstehen erst durch 'Übernehmen und fixieren'.")
-        return
-    entries = [
-        manual_rules_module.create_manual_rule_entry(rule, source="manual")
-        for rule in fix_rules
-    ]
-    frame = pd.DataFrame(manual_rules_module.manual_rule_entry_records(entries, students)).drop(columns=["id"])
-    st.dataframe(frame, width="stretch", hide_index=True)
-    st.warning(
-        "Diese Fixierungen gelten aktuell nur im manuellen Entwurf und im Export. "
-        "Sie sind noch keine aktive Solverregel für einen neuen Optimierungslauf."
-    )
-    st.caption("Der nächste Schritt ist 'Neu optimieren mit Fixierungen'; erst dann werden sie als harte Solverfixierungen übernommen.")
-
-
-def _render_editor_note_status_summary(students: list[Student]) -> None:
-    st.markdown("**Notizstatus**")
-    note_students = [student for student in students if student_has_manual_note(student)]
-    if not note_students:
-        st.success("Keine manuellen Notizen vorhanden.")
-        return
-    statuses = _note_review_status_by_student()
-    counts = Counter(
-        statuses.get(student.internal_id, manual_rules_module.NoteReviewStatus.UNREVIEWED)
-        for student in note_students
-    )
-    rows = [
-        {
-            "Status": "ungeprüft",
-            "Anzahl": counts.get(manual_rules_module.NoteReviewStatus.UNREVIEWED, 0),
-        },
-        {
-            "Status": "als Hinweis behalten",
-            "Anzahl": counts.get(manual_rules_module.NoteReviewStatus.KEPT_AS_NOTE, 0),
-        },
-        {
-            "Status": "in Regel umgewandelt",
-            "Anzahl": counts.get(manual_rules_module.NoteReviewStatus.CONVERTED_TO_RULE, 0),
-        },
-    ]
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
-
-
-def _render_reoptimization_controls(
-    draft,
+def _export_blocker_messages(
     students: list[Student],
+    assignments: dict[str, str],
+    score,
+    validation_messages: list[ValidationMessage],
     class_configs: list[ClassConfig],
     settings: OptimizationSettings,
-) -> None:
-    locked_moves = [move for move in draft.moves if move.lock_after_move]
-    st.markdown("**Neu optimieren mit manuellen Fixierungen**")
-    draft_score = assignment_draft_module.score_assignment(draft, students, class_configs, settings)
-    state = reoptimization_module.draft_reoptimization_state(draft, draft_score)
-    st.caption(reoptimization_view_module.reoptimization_state_text(state))
-    if state == reoptimization_module.ReoptimizationFlowState.DRAFT_HAS_CONFLICTS:
-        st.error("Neuoptimierung ist blockiert, solange der manuelle Entwurf harte Konflikte enthält.")
-        for hint in reoptimization_view_module.reoptimization_action_hints(state):
-            st.caption(hint)
-        return
-    if not locked_moves:
-        st.info("Neuoptimierung ist möglich, sobald mindestens eine Änderung mit 'Übernehmen und fixieren' übernommen wurde.")
-        return
-    st.caption(
-        "Diese Draft-Fixierungen werden als harte Regeln übernommen. "
-        "Der Solver darf alle anderen Schüler neu verteilen; aktive manuelle Regeln bleiben gültig."
+) -> list[str]:
+    del assignments, class_configs, settings
+    report = finality_module.finality_report(
+        students,
+        score,
+        validation_messages,
+        _note_review_status_by_student(),
     )
-    confirm = st.checkbox(
-        "Fixierungen als harte Solverregeln übernehmen und alle anderen Schüler neu optimieren.",
-        key="editor_reoptimize_confirm",
-    )
-    if st.button("Fixierungen übernehmen und neu optimieren", disabled=not confirm, key="editor_reoptimize_with_fixes"):
-        report = reoptimization_module.reoptimize_with_manual_fixations(
-            draft,
-            students,
-            class_configs,
-            settings,
-            base_candidate_name=_editor_base_candidate_name(draft.base_candidate_key),
-            manual_move_impacts=list(st.session_state.get("editor_move_impacts", [])),
-        )
-        if not report.succeeded:
-            st.session_state.last_reoptimization_report = report
-            st.error(reoptimization_view_module.reoptimization_summary_text(report))
-            st.rerun()
-        _promote_draft_fixations_to_manual_rules(draft)
-        st.session_state.solver_result = report.solver_result
-        _clear_editor_state()
-        st.session_state.last_reoptimization_report = report
-        st.success("Neuoptimierung mit Fixierungen abgeschlossen.")
-        st.rerun()
+    return report.blocker_labels()
 
 
-def _render_reoptimization_report(report) -> None:
-    if not report:
-        return
-    st.markdown("**Vergleich nach Neuoptimierung**")
-    if report.succeeded:
-        st.success(reoptimization_view_module.reoptimization_summary_text(report))
-    else:
-        st.error(reoptimization_view_module.reoptimization_summary_text(report))
-        for hint in reoptimization_view_module.reoptimization_action_hints(report.flow_state):
-            st.caption(hint)
-    st.dataframe(
-        pd.DataFrame(reoptimization_view_module.report_comparison_records(report)),
-        width="stretch",
-        hide_index=True,
-    )
-
-
-def _promote_draft_fixations_to_manual_rules(draft) -> None:
-    entries = _manual_rule_entries()
-    for rule in reoptimization_module.draft_fixation_rules(draft):
-        entries, _changed = manual_rules_module.add_manual_rule_entry(entries, rule, source="manual")
-    st.session_state.manual_rule_entries = entries
-    st.session_state.manual_rules = manual_rules_module.active_manual_rules(entries)
-
-
-def _move_impact_frame(impact) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "Kennzahl": row.label,
-                "vorher": row.before,
-                "nachher": row.after,
-                "Änderung": _signed_delta(row.delta),
-                "Bewertung": row.assessment,
-            }
-            for row in assignment_draft_module.move_delta_rows(impact)
-        ]
-    )
-
-
-def _move_class_size_change_text(changes: list) -> str:
-    return "Klassengröße: " + ", ".join(
-        f"{change.class_id} {change.before} -> {change.after}"
-        for change in changes
-    )
-
-
-def _manual_rule_entries_for_export(draft=None):
-    entries = list(_manual_rule_entries())
-    seen = {
-        (entry.rule.type, entry.rule.student_a, entry.rule.student_b, entry.rule.class_id)
-        for entry in entries
-    }
-    if draft is None:
-        return entries
-    for rule in draft.manual_rules:
-        key = (rule.type, rule.student_a, rule.student_b, rule.class_id)
-        if key in seen:
-            continue
-        entries.append(manual_rules_module.create_manual_rule_entry(rule, source="manual"))
-        seen.add(key)
-    return entries
-
-
-def _export_base_candidate_name(draft, solver_result, student_count: int) -> str | None:
-    if draft is None:
-        return None
-    for summary in candidate_summaries(solver_result, student_count):
-        if summary.key == draft.base_candidate_key:
-            return f"{summary.key}: {summary.name}"
-    return draft.base_candidate_key
-
-
-def _editor_base_candidate_name(candidate_key: str) -> str:
-    solver_result = st.session_state.get("solver_result")
-    result = st.session_state.get("import_result")
-    if solver_result and result:
-        for summary in candidate_summaries(solver_result, len(result.students)):
-            if summary.key == candidate_key:
-                return f"{summary.key}: {summary.name}"
-    return candidate_key
-
-
-def _student_assignment_frame(
-    students: list[Student],
-    assignments: dict[str, str],
-    class_id: str | None = None,
-) -> pd.DataFrame:
-    rows = []
-    for student in students:
-        assigned_class = assignments.get(student.internal_id)
-        if class_id and assigned_class != class_id:
-            continue
-        satisfaction = _student_satisfaction(student, students, assignments)
-        friend_statuses = _student_friend_statuses(student, students, assignments)
-        rows.append(
-            {
-                "internal_id": student.internal_id,
-                "Klasse": assigned_class,
-                "Nr": student.nr,
-                "Name": student.full_name,
-                "Sprache": student.second_language,
-                "Musik": student.music_profile,
-                "R": "ja" if student.is_support else "",
-                "Anmerkung": "📝" if student_has_manual_note(student) else "",
-                "Freundeswunsch 1 erfüllt": friend_statuses["friend1"]["label"],
-                "Freundeswunsch 2 erfüllt": friend_statuses["friend2"]["label"],
-                "Zufriedenheit": satisfaction["display"],
-            }
-        )
-    columns = [
-        "internal_id",
-        "Klasse",
-        "Nr",
-        "Name",
-        "Sprache",
-        "Musik",
-        "R",
-        "Anmerkung",
-        "Freundeswunsch 1 erfüllt",
-        "Freundeswunsch 2 erfüllt",
-        "Zufriedenheit",
-    ]
-    frame = pd.DataFrame(rows, columns=columns)
-    if frame.empty:
-        return frame
-    return frame.sort_values(["Klasse", "Name"], na_position="last")
-
-
-def _student_satisfaction(
-    student: Student,
-    students: list[Student],
-    assignments: dict[str, str],
-) -> dict[str, object]:
-    statuses = _student_friend_statuses(student, students, assignments).values()
-    checks = [status["fulfilled"] for status in statuses if status["counts"]]
-
-    if not checks:
-        return {"label": "keine Freundeswünsche", "percent": -1, "display": "-"}
-
-    fulfilled = sum(1 for item in checks if item is True)
-    percent = int(round(fulfilled / len(checks) * 100))
-    return {
-        "label": f"{fulfilled}/{len(checks)}",
-        "percent": percent,
-        "display": f"{percent}% ({fulfilled}/{len(checks)})",
-    }
-
-
-def _student_friend_statuses(
-    student: Student,
-    students: list[Student],
-    assignments: dict[str, str],
-) -> dict[str, dict[str, object]]:
-    return {
-        "friend1": _friend_status(student, students, assignments, student.friend1),
-        "friend2": _friend_status(student, students, assignments, student.friend2),
-    }
-
-
-def _friend_status(
-    student: Student,
-    students: list[Student],
-    assignments: dict[str, str],
-    friend_ref: str | None,
-) -> dict[str, object]:
-    if not friend_ref:
-        return {
-            "label": "kein Wunsch",
-            "fulfilled": None,
-            "counts": False,
-            "friend_label": "-",
-            "friend_class": "-",
-        }
-    friend = resolve_student_ref(students, friend_ref)
-    if not friend:
-        return {
-            "label": "nicht gefunden",
-            "fulfilled": False,
-            "counts": True,
-            "friend_label": friend_ref,
-            "friend_class": "-",
-        }
-    same_class = assignments.get(student.internal_id) == assignments.get(friend.internal_id)
-    return {
-        "label": "ja" if same_class else "nein",
-        "fulfilled": same_class,
-        "counts": True,
-        "friend_label": friend.display_label,
-        "friend_class": assignments.get(friend.internal_id, "-"),
-    }
-
-
-def _student_friend_detail_frame(
-    student: Student,
-    students: list[Student],
-    assignments: dict[str, str],
-) -> pd.DataFrame:
-    statuses = _student_friend_statuses(student, students, assignments)
-    return pd.DataFrame(
-        [
-            {
-                "Wunsch": "Freundeswunsch 1",
-                "Eintrag": student.friend1 or "-",
-                "Person": statuses["friend1"]["friend_label"],
-                "Klasse": statuses["friend1"]["friend_class"],
-                "Erfüllt": statuses["friend1"]["label"],
-            },
-            {
-                "Wunsch": "Freundeswunsch 2",
-                "Eintrag": student.friend2 or "-",
-                "Person": statuses["friend2"]["friend_label"],
-                "Klasse": statuses["friend2"]["friend_class"],
-                "Erfüllt": statuses["friend2"]["label"],
-            },
-        ]
-    )
-
-
-def _signed_delta(value: int) -> str:
-    if value > 0:
-        return f"+{value}"
-    return str(value)
+def _unreviewed_note_count(students: list[Student]) -> int:
+    return finality_module.unreviewed_note_count(students, _note_review_status_by_student())
 
 
 def _visible_validation_warnings(messages: list[ValidationMessage]) -> list[ValidationMessage]:
@@ -1898,25 +1588,25 @@ def _visible_validation_warnings(messages: list[ValidationMessage]) -> list[Vali
 
 def _solver_status_text(status: str) -> tuple[str, str]:
     if status == "OPTIMAL":
-        return "Beste Lösung bewiesen", "Der Solver hat bewiesen, dass er mit diesen Regeln nichts Besseres findet."
+        return "Beste Lösung bewiesen", "Die Berechnung hat gezeigt, dass sie mit diesen Regeln nichts Besseres findet."
     if status == "FEASIBLE":
         return "Gültige Lösung gefunden", "Die harten Regeln sind erfüllt; die Qualitätszahlen unten entscheiden, ob die Lösung pädagogisch brauchbar ist."
     if status == "INFEASIBLE":
         return "Keine gültige Lösung", "Die Regeln oder Klassengrößen widersprechen sich wahrscheinlich."
     if status == "UNKNOWN":
-        return "Keine sichere Lösung im Zeitlimit", "Der Solver hatte innerhalb der Rechenzeit keine verwertbare Lösung."
+        return "Keine sichere Lösung im Zeitlimit", "Die Berechnung hatte innerhalb der Rechenzeit keine verwertbare Lösung."
     if status == "MISSING_DEPENDENCY":
         return "OR-Tools fehlt", "Es wurde kein vollständiger Optimierer gefunden."
-    return status, "Technischer Solverstatus."
+    return status, "Technischer Berechnungsstatus."
 
 
 def _overall_status_text(status: str) -> tuple[str, str]:
     if status == "AUTO_APPROVABLE":
         return "Automatisch freigabefähig", "Soziale Grenze und technische Qualität sind im Zielbereich."
     if status == "REVIEW_CANDIDATES_FOUND":
-        return "Prüfkandidaten gefunden", "Die strenge Variante scheitert, aber Varianten mit Profil-Lockerung erfüllen die soziale Grenze und müssen pädagogisch geprüft werden."
+        return "Prüfkandidaten gefunden", "Die profilminimale Variante scheitert sozial, aber Varianten mit Profil-Lockerung erfüllen die soziale Grenze und müssen pädagogisch geprüft werden."
     if status == "STRICT_ONLY_NOT_APPROVABLE":
-        return "Streng nicht freigabefähig", "Nur die strenge Diagnose-Lösung liegt vor; die soziale Grenze wird verfehlt."
+        return "Profilminimal nicht freigabefähig", "Nur die profilminimale Diagnose-Lösung liegt vor; die soziale Grenze wird verfehlt."
     if status == "NO_USABLE_SOLUTION_FOUND":
         return "Keine brauchbare Lösung", "Es wurde keine Lösung oder kein Kandidat gefunden, der die Qualitätsgrenzen sinnvoll erfüllt."
     return status, "Fachlicher Gesamtstatus."
@@ -2062,8 +1752,14 @@ def _review_class_load_frame(rows) -> pd.DataFrame:
                 "R": row.support_count,
                 "m": row.male_count,
                 "w": row.female_count,
+                "Geschlecht Zielzone": finality_module.gender_target_zone_text(),
+                "Geschlecht Bewertung": finality_module.gender_target_status(
+                    row.size,
+                    row.male_count,
+                    row.female_count,
+                ),
                 "größte Grundschule": row.largest_school_count,
-                "größte Grundschulklasse": row.largest_primary_class_count,
+                "größte Grundschule/alte Klasse": row.largest_primary_class_count,
             }
             for row in rows
         ]
@@ -2308,8 +2004,15 @@ def _render_candidate_cards(
         return
     st.markdown("**Prüfkandidaten**")
     summaries = candidate_summaries(solver_result, student_count)
+    note_statuses = _note_review_status_by_student()
     card_reviews = {
-        summary.key: candidate_review_module.build_candidate_review_model(summary, students, class_configs, settings)
+        summary.key: candidate_review_module.build_candidate_review_model(
+            summary,
+            students,
+            class_configs,
+            settings,
+            note_review_status_by_student=note_statuses,
+        )
         for _, summary, _ in cards
         if summary.assignments
     }
@@ -2460,7 +2163,7 @@ def _render_candidate_review(
         if not note_rows:
             st.success("Keine manuellen Notizen in diesem Kandidaten.")
         else:
-            st.caption("Diese Notizen wurden nicht automatisch verstanden. Bitte manuell prüfen oder in harte Regeln umwandeln.")
+            st.caption("Eindeutige Hinweise werden vorgeschlagen. Jede Notiz muss als Regel oder als Hinweis entschieden werden.")
             unreviewed_rows = [
                 row for row in note_rows if row.review_status == manual_rules_module.NoteReviewStatus.UNREVIEWED
             ]
@@ -2514,19 +2217,43 @@ def _render_note_rule_controls(
     )
     selected_note = note_by_id[selected_note_id]
     st.caption(f"Manuelle Notiz: {selected_note.note_text}")
+    class_ids = [config.class_id for config in class_configs]
+    suggestions = note_rule_conversion_module.suggest_note_rule_actions(
+        students,
+        selected_note_id,
+        available_class_ids=class_ids,
+    )
+    rule_suggestions = [suggestion for suggestion in suggestions if suggestion.has_rule]
+    manual_attention = [suggestion for suggestion in suggestions if not suggestion.has_rule]
+    for suggestion in rule_suggestions:
+        st.info(suggestion.message)
+    for suggestion in manual_attention:
+        st.warning(suggestion.message)
+
+    suggested_rule = rule_suggestions[0] if rule_suggestions else None
+    action_options = [
+        "Als Trennregel anlegen",
+        "Als Zusammenregel anlegen",
+        "Als Klassenfixierung anlegen",
+        "Als erlaubte Klassen anlegen",
+        "Nur als Hinweis behalten",
+    ]
+    suggested_action = {
+        "SEPARATE": "Als Trennregel anlegen",
+        "TOGETHER": "Als Zusammenregel anlegen",
+        "FIX_CLASS": "Als Klassenfixierung anlegen",
+        "ALLOW_CLASSES": "Als erlaubte Klassen anlegen",
+    }.get(getattr(suggested_rule, "rule_type", None), "Nur als Hinweis behalten")
     action = st.radio(
         "Aktion",
-        options=[
-            "Als Trennregel anlegen",
-            "Als Zusammenregel anlegen",
-            "Als Klassenfixierung anlegen",
-            "Nur als Hinweis behalten",
-        ],
-        key=f"note_rule_action_{key_suffix}",
+        options=action_options,
+        index=action_options.index(suggested_action),
+        key=f"note_rule_action_{key_suffix}_{selected_note_id}",
     )
 
     other_student_id = None
     class_id = None
+    allowed_class_ids: tuple[str, ...] = ()
     if action in {"Als Trennregel anlegen", "Als Zusammenregel anlegen"}:
         other_labels = {
             student.display_label: student.internal_id
@@ -2536,23 +2263,60 @@ def _render_note_rule_controls(
         if not other_labels:
             st.warning("Für eine Paarregel fehlt ein zweiter Schüler.")
             return
+        suggested_student_id = (
+            suggested_rule.selected_student_id
+            if suggested_rule
+            and (
+                (action == "Als Trennregel anlegen" and suggested_rule.rule_type == "SEPARATE")
+                or (action == "Als Zusammenregel anlegen" and suggested_rule.rule_type == "TOGETHER")
+            )
+            else None
+        )
+        suggested_label = next(
+            (label for label, student_id in other_labels.items() if student_id == suggested_student_id),
+            None,
+        )
+        sorted_other_labels = sorted(other_labels)
         other_label = st.selectbox(
             "Zweiter Schüler",
-            options=sorted(other_labels),
-            key=f"note_rule_other_{key_suffix}",
+            options=sorted_other_labels,
+            index=sorted_other_labels.index(suggested_label) if suggested_label in sorted_other_labels else 0,
+            key=f"note_rule_other_{key_suffix}_{selected_note_id}",
         )
         other_student_id = other_labels[other_label]
     elif action == "Als Klassenfixierung anlegen":
         if not class_configs:
             st.warning("Für eine Klassenfixierung ist keine Zielklasse konfiguriert.")
             return
+        suggested_class_id = (
+            suggested_rule.class_id
+            if suggested_rule and suggested_rule.rule_type == "FIX_CLASS" and suggested_rule.class_id in class_ids
+            else None
+        )
         class_id = st.selectbox(
             "Zielklasse",
-            options=[config.class_id for config in class_configs],
-            key=f"note_rule_class_{key_suffix}",
+            options=class_ids,
+            index=class_ids.index(suggested_class_id) if suggested_class_id in class_ids else 0,
+            key=f"note_rule_class_{key_suffix}_{selected_note_id}",
         )
+    elif action == "Als erlaubte Klassen anlegen":
+        if not class_configs:
+            st.warning("Für eine Klassenregel sind keine Klassen konfiguriert.")
+            return
+        suggested_class_ids = (
+            list(suggested_rule.class_ids)
+            if suggested_rule and suggested_rule.rule_type == "ALLOW_CLASSES"
+            else []
+        )
+        selected_classes = st.multiselect(
+            "Erlaubte Klassen",
+            options=class_ids,
+            default=[class_id for class_id in suggested_class_ids if class_id in class_ids] or class_ids[:1],
+            key=f"note_rule_allowed_classes_{key_suffix}_{selected_note_id}",
+        )
+        allowed_class_ids = tuple(selected_classes)
 
-    if st.button("Entscheidung übernehmen", key=f"note_rule_submit_{key_suffix}"):
+    if st.button("Entscheidung übernehmen", key=f"note_rule_submit_{key_suffix}_{selected_note_id}"):
         try:
             if action == "Nur als Hinweis behalten":
                 result = note_rule_conversion_module.keep_note_as_hint(
@@ -2568,6 +2332,7 @@ def _render_note_rule_controls(
                     "Als Trennregel anlegen": "SEPARATE",
                     "Als Zusammenregel anlegen": "TOGETHER",
                     "Als Klassenfixierung anlegen": "FIX_CLASS",
+                    "Als erlaubte Klassen anlegen": "ALLOW_CLASSES",
                 }[action]
                 result = note_rule_conversion_module.convert_note_to_manual_rule(
                     students,
@@ -2575,6 +2340,7 @@ def _render_note_rule_controls(
                     rule_type,
                     selected_student_id=other_student_id,
                     class_id=class_id,
+                    class_ids=allowed_class_ids,
                     available_class_ids=[config.class_id for config in class_configs],
                     confirmed=True,
                 )
@@ -2885,7 +2651,7 @@ def _profile_recommendation_text(solver_result) -> str:
             )
         text += " Keine automatische Freigabe, weil technische Qualität und Profil-Lockerung geprüft werden müssen."
     if carried:
-        text += " Dominanz-Carry ist aktiv: lockerere Varianten behalten bessere engere Incumbents."
+        text += " Bessere gespeicherte Kandidaten bleiben auch in lockereren Varianten erhalten."
     return text
 
 
@@ -2940,15 +2706,15 @@ def _sort_decision_reports(reports) -> list:
 
 
 def _render_incumbent_cache_controls(key_suffix: str) -> None:
-    with st.expander("Gespeicherte Kandidaten-Incumbents", expanded=False):
+    with st.expander("Gespeicherte Bestkandidaten", expanded=False):
         st.caption(
             "Die App speichert lokal nur interne Schüler-IDs und Klassenzuweisungen in "
             "`config/profile_incumbents.json`, damit gute Kandidaten bei Folgeläufen nicht verloren gehen. "
             "Die Datei ist ignoriert und wird gegen den Eingabedaten-Hash validiert, bleibt aber sensible lokale Schülerdaten."
         )
-        if st.button("Gespeicherte Kandidaten löschen", key=f"clear_profile_incumbents_{key_suffix}"):
+        if st.button("Gespeicherte Bestkandidaten löschen", key=f"clear_profile_incumbents_{key_suffix}"):
             clear_profile_incumbent_cache()
-            st.success("Gespeicherte Kandidaten wurden gelöscht.")
+            st.success("Gespeicherte Bestkandidaten wurden gelöscht.")
 
 
 def _profile_refinement_frame(solver_result) -> pd.DataFrame:
@@ -3055,34 +2821,27 @@ def _friend_profile_conflict_frame(score) -> pd.DataFrame:
 
 def _class_alert_frame(score) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
+    findings_by_class: dict[str, list[str]] = {}
+    for finding in finality_module.class_finality_findings(score):
+        if finding.class_id:
+            findings_by_class.setdefault(finding.class_id, []).append(finding.message)
     for report in score.class_reports:
         notes = []
+        notes.extend(findings_by_class.get(report.class_id, []))
         if report.is_language_mixed:
             notes.append(f"F/L gemischt, Minderheit {report.language_minority_count}")
         if report.is_music_mixed:
             notes.append(f"Musikprofile gemischt, Minderheit {report.music_minority_count}")
         if report.music_focus_shortfall:
             notes.append(f"Musik-Profilanteil schwach ({report.music_focus_shortfall})")
-        if report.support_count >= 4:
-            notes.append(f"viele R-Markierungen ({report.support_count})")
         school_counts = {school: count for school, count in report.school_counts.items() if school != "leer"}
         if school_counts:
             school, count = max(school_counts.items(), key=lambda item: item[1])
-            if count >= max(4, report.size // 3):
+            if finality_module.MAX_PRIMARY_SCHOOL_PER_CLASS >= count >= max(4, report.size // 3):
                 notes.append(f"Ballung Grundschule {school} ({count})")
         if notes:
             rows.append({"Klasse": report.class_id, "Auffälligkeit": "; ".join(notes)})
     return pd.DataFrame(rows)
-
-
-def _selected_row_indexes(event) -> list[int]:
-    selection = getattr(event, "selection", None)
-    if selection is None and isinstance(event, dict):
-        selection = event.get("selection", {})
-    rows = getattr(selection, "rows", None)
-    if rows is None and isinstance(selection, dict):
-        rows = selection.get("rows", [])
-    return list(rows or [])
 
 
 if __name__ == "__main__":

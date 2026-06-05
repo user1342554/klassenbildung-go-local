@@ -8,16 +8,8 @@ import klassenbildung.optimization.solver as solver_module
 from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, Student
 from klassenbildung.excel_io.excel_export import export_excel
 from klassenbildung.optimization.solver import solve_assignments
+from klassenbildung.presentation.candidate_review import build_candidate_review_model
 from klassenbildung.presentation.result_view_model import CandidateRole, CandidateSource, CandidateSummary
-from klassenbildung.services.assignment_draft import (
-    ManualMove,
-    apply_move,
-    build_candidate_review_for_draft,
-    create_assignment_draft,
-    move_impact,
-    revert_last_move,
-    score_assignment,
-)
 from klassenbildung.services.manual_rules import (
     NoteReviewStatus,
     active_manual_rules,
@@ -28,7 +20,7 @@ from klassenbildung.services.manual_rules import (
 from klassenbildung.services.note_rule_conversion import convert_note_to_manual_rule
 
 
-def test_full_manual_workflow_note_rule_solve_review_draft_export() -> None:
+def test_full_manual_workflow_note_rule_solve_review_export() -> None:
     students = [
         _student(1, "F", "B", friend1="2", note_text="nicht mit V2 zusammen"),
         _student(2, "F", "B", friend1="1"),
@@ -70,8 +62,7 @@ def test_full_manual_workflow_note_rule_solve_review_draft_export() -> None:
 
     summary = _summary_from_solver_result(solver_result.assignments, solver_result.score_report, len(students))
     note_statuses = note_review_status_by_student(entries, set())
-    review = build_candidate_review_for_draft(
-        create_assignment_draft(summary, manual_rule_entries=entries),
+    review = build_candidate_review_model(
         summary,
         students,
         class_configs,
@@ -81,70 +72,29 @@ def test_full_manual_workflow_note_rule_solve_review_draft_export() -> None:
 
     assert review.students_with_manual_notes[0].review_status == NoteReviewStatus.CONVERTED_TO_RULE
 
-    draft = create_assignment_draft(summary, manual_rule_entries=entries)
-    move = _first_non_blocked_move(draft.current_assignments, class_configs, locked_students={"s1", "s2"})
-    impact = move_impact(draft, move, summary, students, class_configs, settings)
-    moved = apply_move(draft, move, students=students, class_configs=class_configs)
-    reverted = revert_last_move(moved)
-    locked = apply_move(
-        draft,
-        ManualMove(
-            move.student_id,
-            move.from_class_id,
-            move.to_class_id,
-            lock_after_move=True,
-            reason="pädagogisch fixiert",
-        ),
-        students=students,
-        class_configs=class_configs,
-    )
-
-    assert impact.class_size_changes
-    assert reverted.current_assignments == draft.current_assignments
-    assert ManualRule("FIX_CLASS", move.student_id, class_id=move.to_class_id) in locked.manual_rules
-    assert not score_assignment(locked, students, class_configs, settings).hard_violations
-
     exported = export_excel(
         None,
         students,
-        locked.current_assignments,
+        solver_result.assignments,
         class_configs,
-        score_assignment(locked, students, class_configs, settings),
+        solver_result.score_report,
         [],
         manual_rule_entries=entries,
         note_review_status_by_student=note_statuses,
-        manual_moves=locked.moves,
-        manual_move_impacts=[impact],
         settings=settings,
     )
     workbook = load_workbook(io.BytesIO(exported))
 
     assert workbook["Manuelle Regeln"]["A2"].value == "aktiv"
     assert workbook["Notizen"]["C2"].value == "in Regel umgewandelt"
-    assert workbook["Manuelle Änderungen"]["F2"].value == "pädagogisch fixiert"
-    assert workbook["Manuelle Änderungen"]["G1"].value == "Delta ohne Wunschfreund"
+    assert "Manuelle Änderungen" not in workbook.sheetnames
     overview = {
         row[0]: row[1]
         for row in workbook["Übersicht"].iter_rows(min_row=2, values_only=True)
         if row[0]
     }
-    assert overview["Manuell verändert"] == "ja"
-
-
-def _first_non_blocked_move(
-    assignments: dict[str, str],
-    class_configs: list[ClassConfig],
-    *,
-    locked_students: set[str],
-) -> ManualMove:
-    class_ids = [config.class_id for config in class_configs]
-    for student_id, from_class_id in assignments.items():
-        if student_id in locked_students:
-            continue
-        for to_class_id in class_ids:
-            if to_class_id != from_class_id:
-                return ManualMove(student_id, from_class_id, to_class_id, reason="Teständerung")
-    raise AssertionError("Fixture contains no movable student.")
+    assert overview["Anzahl aktiver Regeln"] == 1
+    assert overview["Anzahl ungeprüfter Notizen"] == 0
 
 
 def _summary_from_solver_result(assignments: dict[str, str], score, student_count: int) -> CandidateSummary:

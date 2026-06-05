@@ -51,3 +51,12 @@ def normalize_music_profile(value: Any) -> str | None:
         return "Reg"
     return upper
 
+
+def normalize_primary_class(value: Any) -> str | None:
+    text = normalize_string(value)
+    if not text:
+        return None
+    match = re.search(r"([1-9])\s*([a-zA-Z])\s*$", text)
+    if not match:
+        return text.lower()
+    return f"{int(match.group(1))}{match.group(2).lower()}"

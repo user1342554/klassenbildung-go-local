@@ -6,7 +6,7 @@ from typing import Literal
 
 
 Severity = Literal["INFO", "WARNUNG", "FEHLER"]
-RuleType = Literal["FIX_CLASS", "SEPARATE", "TOGETHER"]
+RuleType = Literal["FIX_CLASS", "ALLOW_CLASSES", "SEPARATE", "TOGETHER"]
 SolverStatus = Literal[
     "OPTIMAL",
     "FEASIBLE",
@@ -160,6 +160,7 @@ class ManualRule:
     student_a: str
     student_b: str | None = None
     class_id: str | None = None
+    class_ids: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)

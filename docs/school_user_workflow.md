@@ -4,9 +4,30 @@ Diese Anleitung beschreibt den normalen Arbeitsablauf fuer die Schule. Technisch
 
 ## 1. Datei laden
 
-Oeffne die App und lade die Schuelerliste hoch. Wenn sich die Schuelerdaten seit dem letzten Lauf geaendert haben, setzt die App manuelle Regeln und Entwuerfe zurueck. Das verhindert, dass alte Entscheidungen auf neue Daten angewendet werden.
+Oeffne die App und lade die Schuelerliste hoch. Wenn sich die Schuelerdaten seit dem letzten Lauf geaendert haben, setzt die App manuelle Regeln zurueck. Das verhindert, dass alte Entscheidungen auf neue Daten angewendet werden.
 
-## 2. Ergebnis berechnen
+## 2. Profile und Bemerkungen pruefen
+
+Pruefe in den Einstellungen die festen Klassenprofile. Wenn Klassennamen wie
+5a S/Reg + F/L oder 5e G/Reg + F/L verbindlich sind, muessen Sprach- und
+Musikprofile als harte Regeln aktiv bleiben.
+
+Reg bedeutet dabei einen neutralen Fueller. Ein Reg-Kind darf nur dann in eine
+Profilklasse, wenn Reg in dieser Klasse ausdruecklich erlaubt ist. Die
+Musik-Mischklassen-Kennzahl zaehlt nur Mischungen zwischen B, S und G; Reg ist
+keine zweite Profilgruppe.
+
+Pruefe danach die Bemerkungen. Eindeutige Hinweise werden vorbefuellt, zum
+Beispiel:
+
+- nur 5e moeglich -> Klassenfixierung
+- nicht mit Nr. 23 -> Trennregel
+- mit Nr. 23 zusammen -> Zusammenregel
+
+Unklare Hinweise wie "nicht mit Schwester" muessen bewusst geklaert werden,
+weil die App den zweiten Schueler nicht erraten soll.
+
+## 3. Ergebnis berechnen
 
 Starte die Berechnung. Die Standardansicht zeigt danach, ob die strenge Profilvariante brauchbar ist und welche Pruefkandidaten vorliegen.
 
@@ -18,7 +39,7 @@ Normalerweise gilt:
 
 Keine Variante wird automatisch freigegeben, wenn eine paedagogische Pruefung noetig ist.
 
-## 3. Kandidat oeffnen
+## 4. Kandidat oeffnen
 
 Oeffne zuerst den empfohlenen Pruefkandidaten. In der Kandidatenpruefung stehen die wichtigen Listen:
 
@@ -31,7 +52,7 @@ Oeffne zuerst den empfohlenen Pruefkandidaten. In der Kandidatenpruefung stehen 
 
 Notizen sind sichtbar markiert. Eine Notiz wird nicht automatisch interpretiert.
 
-## 4. Notizen pruefen
+## 5. Notizen pruefen
 
 Im Notizbereich entscheidest du bewusst, was mit einer Notiz passiert:
 
@@ -40,9 +61,9 @@ Im Notizbereich entscheidest du bewusst, was mit einer Notiz passiert:
 - als Klassenfixierung anlegen
 - nur als Hinweis behalten
 
-Bei Trenn- und Zusammenregeln muss der zweite Schueler bewusst ausgewaehlt werden. Die App liest den Notiztext nicht automatisch aus.
+Bei Trenn- und Zusammenregeln muss der zweite Schueler bewusst ausgewaehlt werden. Die App kann eindeutige Treffer vorbefuellen, die Entscheidung bleibt aber sichtbar.
 
-## 5. Aktive Regeln kontrollieren
+## 6. Aktive Regeln kontrollieren
 
 Pruefe den Bereich fuer aktive manuelle Regeln. Jede Regel zeigt:
 
@@ -52,73 +73,57 @@ Pruefe den Bereich fuer aktive manuelle Regeln. Jede Regel zeigt:
 - Quelle
 - aktiv oder deaktiviert
 
-Regeln koennen deaktiviert oder geloescht werden. Deaktivierte Regeln wirken nicht auf Solver oder manuellen Entwurf.
+Regeln koennen deaktiviert oder geloescht werden. Deaktivierte Regeln wirken nicht auf die naechste Berechnung.
 
-## 6. Manuell bearbeiten
+## 7. Nach Regeländerungen neu berechnen
 
-Im tabellarischen Editor waehle:
+Starte die Berechnung erneut, wenn die aktiven manuellen Regeln fachlich passen. Die App gibt aktive Regeln als harte Bedingungen an den Solver weiter.
 
-1. Kandidat
-2. Schueler
-3. Zielklasse
-4. Aenderung pruefen
+Wenn die Regeln widerspruechlich oder zu eng sind, zeigt die App blockierende Fehler. Dann muessen Regeln geloescht, deaktiviert oder angepasst werden.
 
-Die App zeigt danach die Auswirkung, zum Beispiel:
+## 8. Ergebnis erneut pruefen
 
-- Kinder ohne Wunschfreund: vorher/nachher
-- Freund 1 erfuellt: vorher/nachher
-- gegenseitige Freunde erfuellt: vorher/nachher
-- F/L- und Musik-Minderheit: vorher/nachher
-- Klassengroesse: vorher/nachher
-- Warnungen und Blocker
+Pruefe den neuen Kandidaten wieder in der Kandidatenpruefung:
 
-Eine Aenderung mit hartem Blocker darf nicht uebernommen werden.
+- Kinder ohne Wunschfreund
+- getrennte gegenseitige Freundschaften
+- manuelle Notizen
+- F/L- und Musik-Mischklassen
+- Klassenbelastung
 
-## 7. Verschieben oder fixieren
+Entscheide anhand dieser Listen, ob die neue Loesung besser pruefbar ist als das vorherige Ergebnis.
 
-Es gibt zwei unterschiedliche Entscheidungen:
+## 9. Export erzeugen
 
-- Verschieben: gilt nur im manuellen Entwurf.
-- Verschieben und fixieren: wird als harte Vorgabe fuer die Neuoptimierung genutzt.
+Waehle vor dem Download bewusst die Exportgrundlage:
 
-Fixiere nur Schueler, die wirklich in dieser Klasse bleiben muessen.
+- Score-beste Loesung: niedrigster dokumentierter Punktwert, normalerweise die erste Empfehlung
+- Regelkonform: aktuelle Ergebnisliste ohne harte Regelverletzungen
+- Profilminimal: strengere Vergleichsrichtung mit moeglichst wenigen Mischklassen
+- Ausgewogen: Profilkosten und soziale Werte gemeinsam pruefen
+- Sozialoptimiert: staerkste soziale Kennzahlen unter den Pruefkandidaten
 
-## 8. Neu optimieren
+Wenn die gewaehlte Exportgrundlage nicht die score-beste dokumentierte Loesung
+ist, zeigt die App vor dem Download eine Warnung. Der Excel-Export schreibt in
+der Uebersicht mit, welcher Kandidat wirklich als Klassenliste exportiert wurde.
 
-Starte die Neuoptimierung nur, wenn der Entwurf keine Blocker hat. Die App behaelt aktive manuelle Regeln und fixierte Schueler bei. Alle anderen Schueler duerfen neu verteilt werden.
+Solange offene Notizen oder harte Blocker vorhanden sind, ist der Finalexport
+gesperrt. Die Datei ist dann ausdruecklich ein Pruefexport und die Uebersicht
+zeigt die Finalitaets-Ampel auf rot.
 
-Wenn die Neuoptimierung nicht loesbar oder nicht entscheidbar ist, bleibt der bisherige Entwurf erhalten.
-
-## 9. Vorher und Nachher vergleichen
-
-Nach der Neuoptimierung zeigt die App:
-
-- Ausgangskandidat
-- Anzahl Fixierungen
-- Anzahl aktiver Regeln
-- veraenderte Schueler
-- Vergleich der wichtigsten Kennzahlen
-
-Entscheide anhand dieses Vergleichs, ob die neue Loesung besser pruefbar ist als der manuelle Entwurf.
-
-## 10. Export erzeugen
+Die App vergleicht lokal gespeicherte Bestkandidaten mit neu berechneten
+Kandidaten. Dadurch geht eine frueher bessere Einteilung nicht verloren,
+solange Eingabedaten, Profile, Einstellungen und aktive Regeln gleich bleiben.
 
 Der Export dokumentiert:
 
-- Basis-Kandidat
-- ob manuell geaendert wurde
-- manuelle Moves
-- fixierte Moves
 - aktive und deaktivierte Regeln
 - Notizstatus
-- Neuoptimierungsstatus
 - Kandidatendetails
 
 Der Export enthaelt sensible Schuelerdaten. Teile ihn nur mit berechtigten Personen.
 
 ## Was nicht automatisch passiert
 
-- Notizen werden nicht automatisch gelesen oder interpretiert.
-- Ein temporaerer Move ist keine Fixierung.
-- Eine fehlgeschlagene Neuoptimierung ersetzt keinen gueltigen Entwurf.
+- Unklare Notizen werden nicht geraten oder automatisch angewendet.
 - Technische Solverdetails sind fuer den Standardablauf nicht noetig.

@@ -6,8 +6,9 @@ harte Klassenregeln und gewichtete weiche Wünsche an, berechnet mit OR-Tools
 CP-SAT Klassenvorschläge und exportiert das Ergebnis wieder als Excel-Datei.
 
 Die App läuft lokal auf dem PC. Es werden keine Schülerdaten in eine Cloud
-hochgeladen. Bemerkungen werden nicht automatisch interpretiert, sondern nur
-angezeigt und müssen pädagogisch/manuell geprüft werden.
+hochgeladen. Bemerkungen werden lokal geprüft: eindeutige Hinweise werden als
+Regelvorschlag vorbefüllt, unklare Hinweise müssen pädagogisch/manuell
+entschieden werden.
 
 ## Start
 
@@ -39,8 +40,10 @@ Version 0.1 bis 0.3 sind als erster lauffähiger Kern angelegt:
 - Excel-Import aus dem Blatt `Basis`
 - robuste Erkennung von Schülerzeilen trotz fehlerhafter Schülernummern
 - Warnungen für bekannte Datenprobleme
-- Anzeige von Bemerkungen ohne automatische Interpretation
+- Bemerkungsprüfung mit Regelvorschlägen für eindeutige Klassen- und Paarhinweise
 - konfigurierbare Klassenprofile und Gewichtungen über lokale JSON-Dateien
+- feste Klassenprofile können als harte Regeln erzwungen werden
+- `Reg` ist in Musikprofilklassen nur erlaubt, wenn es im Klassenprofil ausdrücklich hinterlegt ist; B/S/G-Mischungen werden getrennt davon bewertet
 - einfacher Optimierer mit OR-Tools, plus Fallback ohne OR-Tools
 - Sprach- und Musikangaben bleiben beim Schueler erhalten; F/L- und Musik-Mischklassen sind moeglich und werden als weiche Praeferenzen bewertet
 - Mischklassen werden nach Schwere bewertet: Grundstrafe pro Mischklasse plus Minderheits-Schueler in der Mischung
@@ -55,11 +58,9 @@ Version 0.1 bis 0.3 sind als erster lauffähiger Kern angelegt:
 ## Datenschutzgrenzen
 
 - Keine Cloud
-- Kein Convex
-- Kein Vercel
 - Kein Login
 - Keine Datenbank mit Schülerdaten
-- Keine KI-Auswertung von Bemerkungen
+- Keine KI-Auswertung von Bemerkungen; Regelvorschläge entstehen nur durch lokale Textmuster
 - Keine echten Schülerdaten ins Git-Repo legen
 
 ## Projektstruktur

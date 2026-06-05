@@ -68,7 +68,7 @@ def import_excel(source: bytes | BinaryIO, filename: str | None = None) -> Impor
     )
     messages = [
         ValidationMessage("INFO", f"{len(students)} Schüler erkannt."),
-        ValidationMessage("INFO", f"{len(detected_classes)} Klassen erkannt."),
+        ValidationMessage("INFO", _detected_classes_message(len(detected_classes))),
         ValidationMessage(
             "INFO",
             f"{sum(1 for student in students if student.comment)} Bemerkungen gefunden.",
@@ -187,3 +187,9 @@ def _class_sort_key(class_id: str) -> tuple[int, str]:
     number = "".join(character for character in class_id if character.isdigit())
     letter = "".join(character for character in class_id if character.isalpha())
     return (int(number) if number else 0, letter)
+
+
+def _detected_classes_message(count: int) -> str:
+    if count == 0:
+        return "0 Vorbelegungen in der Eingabedatei erkannt."
+    return f"{count} Klassen-Vorbelegungen in der Eingabedatei erkannt."

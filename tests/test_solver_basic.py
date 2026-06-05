@@ -562,6 +562,46 @@ def test_cached_candidate_is_not_used_after_class_size_policy_change() -> None:
     assert cached is None
 
 
+def test_seeded_incumbent_preserves_lower_score_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(solver_module, "_PROFILE_INCUMBENT_CACHE_PATH", tmp_path / "incumbents.json")
+    solver_module._PROFILE_INCUMBENT_CACHE.clear()
+    solver_module._PROFILE_INCUMBENT_CACHE_LOADED = False
+    students = [
+        replace(_student(1, "F"), original_class="5a"),
+        replace(_student(2, "F"), original_class="5a"),
+        replace(_student(3, "F"), original_class="5b"),
+        replace(_student(4, "F"), original_class="5b"),
+    ]
+    classes = [
+        ClassConfig("5a", "5a", 2, 2, [], []),
+        ClassConfig("5b", "5b", 2, 2, [], []),
+    ]
+    settings = _zero_settings(weight_keep_existing=50)
+    better_assignments = {"s1": "5a", "s2": "5a", "s3": "5b", "s4": "5b"}
+    worse_assignments = {"s1": "5a", "s2": "5b", "s3": "5a", "s4": "5b"}
+    cache_key = solver_module._profile_incumbent_cache_key(students, classes, settings, [])
+
+    better_score = solver_module.seed_profile_incumbent_assignments(
+        students,
+        classes,
+        settings,
+        better_assignments,
+    )
+    worse_score = solver_module.seed_profile_incumbent_assignments(
+        students,
+        classes,
+        settings,
+        worse_assignments,
+    )
+
+    assert better_score.total_score == 0
+    assert worse_score.total_score > better_score.total_score
+    assert solver_module._PROFILE_INCUMBENT_CACHE[cache_key]["0:0"] == better_assignments
+
+
 def test_phase_reports_keep_fixed_metrics_monotonic() -> None:
     pytest.importorskip("ortools")
     students = [

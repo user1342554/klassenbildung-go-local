@@ -35,6 +35,20 @@ def test_active_manual_rule_records_show_source_and_status() -> None:
     ]
 
 
+def test_allowed_classes_rule_records_show_target_classes() -> None:
+    students = [_student(1)]
+    entry = create_manual_rule_entry(
+        ManualRule("ALLOW_CLASSES", "s1", class_ids=("5a", "5c", "5e")),
+        source="note",
+        note_student_id="s1",
+    )
+
+    records = manual_rule_entry_records([entry], students)
+
+    assert records[0]["Typ"] == "Erlaubte Klassen"
+    assert records[0]["Ziel / Partner"] == "5a, 5c, 5e"
+
+
 def test_manual_rule_entry_can_be_deactivated_and_deleted() -> None:
     entry = create_manual_rule_entry(ManualRule("SEPARATE", "s1", "s2"), source="note")
 

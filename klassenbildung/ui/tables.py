@@ -42,7 +42,7 @@ def _message_action(message: ValidationMessage) -> str:
     if "Grundschulklasse wirkt uneinheitlich" in text:
         return "Spalte Q vereinheitlichen, z.B. 4a statt 4 a, 04A oder 0404a."
     if "Bemerkung muss manuell geprüft werden" in text:
-        return "Im Details-Tab oder Editor manuell lesen. Das Programm macht daraus keine automatische Regel."
+        return "Bemerkung vor der Berechnung prüfen; eindeutige Hinweise kann die App als Regel vorbefüllen."
     if "Basis" in text and "fehlt" in text:
         return 'Excel-Datei prüfen: Das Arbeitsblatt muss "Basis" heißen.'
     if "Header-Zeile" in text:
@@ -83,6 +83,7 @@ def class_configs_to_frame(class_configs: list[ClassConfig]) -> pd.DataFrame:
         [
             {
                 "Klasse": config.class_id,
+                "Profilname": config.label,
                 "Musikangebot": ", ".join(config.music_allowed) or "alle",
                 "Sprachangebot": ", ".join(config.languages_allowed) or "alle",
                 "min": config.size_min,
@@ -114,7 +115,7 @@ def score_to_class_frame(score_report: ScoreReport) -> pd.DataFrame:
                 "Musik Profilfehlmenge": report.music_focus_shortfall,
                 "R": report.support_count,
                 "größte Grundschule": _largest_count(report.school_counts),
-                "größte Grundschulklasse": _largest_count(report.primary_class_counts),
+                "größte Grundschule/alte Klasse": _largest_count(report.primary_class_counts),
             }
             for report in score_report.class_reports
         ]

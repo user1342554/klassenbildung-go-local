@@ -64,6 +64,8 @@ def test_candidate_review_marks_converted_and_kept_note_statuses() -> None:
     )
 
     assert review.students_with_manual_notes[0].review_status == NoteReviewStatus.CONVERTED_TO_RULE
+    assert not any("ungeprüfte Notizen" in warning.message for warning in review.warnings)
+    assert any("als Regel oder Hinweis entschieden" in warning.message for warning in review.warnings)
 
 
 def test_candidate_review_has_no_solver_jargon() -> None:
@@ -102,10 +104,11 @@ def test_candidate_review_records_are_json_ready_for_all_review_candidates() -> 
 def test_candidate_review_warning_levels_and_readiness() -> None:
     review = _review()
 
-    assert review.readiness == ReviewReadiness.NEEDS_ATTENTION
+    assert review.readiness == ReviewReadiness.BLOCKED
+    assert any(warning.level == ReviewWarningLevel.BLOCKER for warning in review.warnings)
     assert any(warning.level == ReviewWarningLevel.WARNING for warning in review.warnings)
     assert any(warning.level == ReviewWarningLevel.INFO for warning in review.warnings)
-    assert review.blocker_count == 0
+    assert review.blocker_count >= 1
 
 
 def test_candidate_review_with_hard_violation_is_blocked() -> None:

@@ -280,7 +280,7 @@ def _report(
         review_candidate=variant != "A streng",
         social_limit_met=True,
         recommendation_role=role,
-        assignments={f"s{index}": "5a" for index in range(210)},
+        assignments={f"s{index}": f"{variant}-5a" for index in range(210)},
     )
 
 
