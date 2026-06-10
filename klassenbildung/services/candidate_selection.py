@@ -60,15 +60,13 @@ def fl_conservative_candidate(solver_result, student_count: int) -> CandidateSum
 
 
 def decision_candidate_cards(solver_result, student_count: int) -> list[tuple[str, CandidateSummary, str]]:
-    items = [
-        ("E - am ausgewogensten", balanced_candidate(solver_result, student_count), "Profil-/Sozialkompromiss zuerst prüfen."),
-        ("F - sozial stärkste Alternative", social_strongest_candidate(solver_result, student_count), "Beste Sozialwerte, aber profilseitig teurer."),
-        ("C - F/L-schonende Alternative", fl_conservative_candidate(solver_result, student_count), "F/L möglichst streng, Musik stärker gelockert."),
+    best = social_strongest_candidate(solver_result, student_count)
+    if not best:
+        return []
+    return [
+        (
+            f"{best.key} - beste Lösung",
+            best,
+            "Diese Lösung wird als einzige Grundlage angezeigt.",
+        )
     ]
-    cards: list[tuple[str, CandidateSummary, str]] = []
-    seen: set[str] = set()
-    for title, summary, caption in items:
-        if summary and summary.key not in seen:
-            seen.add(summary.key)
-            cards.append((title, summary, caption))
-    return cards

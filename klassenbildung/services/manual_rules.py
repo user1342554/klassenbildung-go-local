@@ -18,6 +18,8 @@ class NoteReviewStatus(StrEnum):
     UNREVIEWED = "unreviewed"
     KEPT_AS_NOTE = "kept_as_note"
     CONVERTED_TO_RULE = "converted_to_rule"
+    DEACTIVATED_RULE = "deactivated_rule"
+    UNRESOLVED_BLOCKER = "unresolved_blocker"
 
 
 @dataclass(frozen=True)
@@ -142,11 +144,18 @@ def manual_rule_entry_records(entries: list[ManualRuleEntry], students: list[Stu
 def note_review_status_by_student(
     entries: list[ManualRuleEntry],
     kept_note_student_ids: set[str],
+    unresolved_note_student_ids: set[str] | None = None,
 ) -> dict[str, NoteReviewStatus]:
     statuses = {student_id: NoteReviewStatus.KEPT_AS_NOTE for student_id in kept_note_student_ids}
+    for student_id in unresolved_note_student_ids or set():
+        statuses[student_id] = NoteReviewStatus.UNRESOLVED_BLOCKER
     for entry in entries:
-        if entry.source == "note" and entry.note_student_id and entry.active:
-            statuses[entry.note_student_id] = NoteReviewStatus.CONVERTED_TO_RULE
+        if entry.source == "note" and entry.note_student_id:
+            statuses[entry.note_student_id] = (
+                NoteReviewStatus.CONVERTED_TO_RULE
+                if entry.active
+                else NoteReviewStatus.DEACTIVATED_RULE
+            )
     return statuses
 
 

@@ -9,6 +9,7 @@ from klassenbildung.core.constants import (
     ALLOWED_LANGUAGES,
     ALLOWED_MUSIC_PROFILES,
 )
+from klassenbildung.core.normalization import normalize_primary_class
 from klassenbildung.core.models import (
     ClassConfig,
     ManualRule,
@@ -17,7 +18,7 @@ from klassenbildung.core.models import (
     ValidationMessage,
     ValidationResult,
 )
-from klassenbildung.optimization.scoring import resolve_student_ref
+from klassenbildung.optimization.scoring import resolve_student_ref, student_ref_candidates
 from klassenbildung.validation.warnings import primary_class_looks_irregular, primary_class_normalization_label
 
 
@@ -46,6 +47,7 @@ def validate_students(
     else:
         messages.extend(_validate_hard_profile_feasibility(students, class_configs, settings))
         messages.extend(_validate_profile_capacity_feasibility(students, class_configs, settings))
+        messages.extend(_validate_distribution_limit_feasibility(students, class_configs, settings))
         min_total = sum(config.size_min for config in class_configs)
         max_total = sum(config.size_max for config in class_configs)
         if len(students) < min_total:
@@ -149,16 +151,6 @@ def _validate_student_fields(students: list[Student]) -> list[ValidationMessage]
             label = primary_class_normalization_label(student.primary_class)
             if label:
                 normalized_primary_classes[label] += 1
-        if _student_has_manual_note(student):
-            messages.append(
-                ValidationMessage(
-                    "WARNUNG",
-                    "Bemerkung muss manuell geprüft werden.",
-                    student.row_number,
-                    "Bemerkung",
-                    _student_effective_note_text(student),
-                )
-            )
     if normalized_primary_classes:
         summary = "; ".join(
             f"{label} ({count}x)"
@@ -175,6 +167,81 @@ def _validate_student_fields(students: list[Student]) -> list[ValidationMessage]
     return messages
 
 
+def _validate_distribution_limit_feasibility(
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+) -> list[ValidationMessage]:
+    class_count = len(class_configs)
+    if class_count <= 0:
+        return []
+    messages: list[ValidationMessage] = []
+    messages.extend(
+        _distribution_group_messages(
+            Counter(student.school for student in students if student.school),
+            settings.max_primary_school_per_class,
+            class_count,
+            "Harte Grundschul-Ballungsgrenze ist mit den Daten unvereinbar",
+            "Grundschule",
+        )
+    )
+    messages.extend(
+        _distribution_group_messages(
+            Counter(_primary_school_class_key(student) for student in students if _primary_school_class_key(student)),
+            settings.max_primary_school_class_per_class,
+            class_count,
+            "Harte Grundschulklassen-Ballungsgrenze ist mit den Daten unvereinbar",
+            "Grundschule/alte Klasse",
+        )
+    )
+    support_count = sum(1 for student in students if student.is_support)
+    if settings.max_support_per_class >= 0 and support_count > settings.max_support_per_class * class_count:
+        messages.append(
+            ValidationMessage(
+                "FEHLER",
+                "Harte R-Obergrenze ist mit den Daten unvereinbar: "
+                f"{support_count} R-/Unterstützungsmarkierungen, "
+                f"maximal {settings.max_support_per_class} pro Klasse bei {class_count} Klassen.",
+                column="Eignung",
+                value=str(support_count),
+            )
+        )
+    return messages
+
+
+def _distribution_group_messages(
+    counts: Counter[str],
+    upper_bound: int,
+    class_count: int,
+    label: str,
+    column: str,
+) -> list[ValidationMessage]:
+    if upper_bound < 0:
+        return []
+    messages: list[ValidationMessage] = []
+    total_capacity = upper_bound * class_count
+    for value, count in sorted(counts.items()):
+        if count <= total_capacity:
+            continue
+        messages.append(
+            ValidationMessage(
+                "FEHLER",
+                f"{label}: {count} Kinder in {value}, maximal {upper_bound} pro Klasse bei {class_count} Klassen.",
+                column=column,
+                value=value,
+            )
+        )
+    return messages
+
+
+def _primary_school_class_key(student: Student) -> str | None:
+    primary_class = normalize_primary_class(student.primary_class)
+    if not primary_class:
+        return None
+    school = (student.school or "unbekannte Schule").strip() or "unbekannte Schule"
+    return f"{school} / {primary_class}"
+
+
 def _validate_friend_references(students: list[Student]) -> list[ValidationMessage]:
     messages: list[ValidationMessage] = []
     for student in students:
@@ -182,7 +249,20 @@ def _validate_friend_references(students: list[Student]) -> list[ValidationMessa
             ("Freund 1", "Freundeswunsch 1", student.friend1),
             ("Freund 2", "Freundeswunsch 2", student.friend2),
         ):
-            if reference and not resolve_student_ref(students, reference):
+            if not reference:
+                continue
+            match_count = len(student_ref_candidates(students, reference))
+            if match_count > 1:
+                messages.append(
+                    ValidationMessage(
+                        "WARNUNG",
+                        f"{label} ist mehrdeutig.",
+                        student.row_number,
+                        column,
+                        reference,
+                    )
+                )
+            elif match_count == 0:
                 messages.append(
                     ValidationMessage(
                         "WARNUNG",
@@ -462,15 +542,3 @@ def _manual_pair_key(student_a: Student, student_b: Student) -> tuple[str, str]:
 def _students_from_pair(students: list[Student], pair: tuple[str, str]) -> tuple[Student, Student]:
     by_id = {student.internal_id: student for student in students}
     return by_id[pair[0]], by_id[pair[1]]
-
-
-def _student_effective_note_text(student: object) -> str | None:
-    note_text = getattr(student, "note_text", None)
-    if note_text is not None:
-        return note_text
-    return getattr(student, "comment", None)
-
-
-def _student_has_manual_note(student: object) -> bool:
-    note_text = _student_effective_note_text(student)
-    return bool(note_text and note_text.strip())

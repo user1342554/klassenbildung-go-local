@@ -56,7 +56,8 @@ def normalize_primary_class(value: Any) -> str | None:
     text = normalize_string(value)
     if not text:
         return None
-    match = re.search(r"([1-9])\s*([a-zA-Z])\s*$", text)
+    compact = re.sub(r"\s+", "", text).upper()
+    match = re.search(r"0*([1-9])([A-Z])$", compact)
     if not match:
-        return text.lower()
-    return f"{int(match.group(1))}{match.group(2).lower()}"
+        return compact.lstrip("0") or compact
+    return f"{int(match.group(1))}{match.group(2)}"

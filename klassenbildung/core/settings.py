@@ -6,15 +6,19 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping
 
-from klassenbildung.core.constants import DEFAULT_WEIGHTS
+from klassenbildung.core.constants import DEFAULT_DISTRIBUTION_LIMITS, DEFAULT_WEIGHTS
 from klassenbildung.core.models import ClassConfig, ClassSizePolicy, OptimizationSettings
-from klassenbildung.core.normalization import normalize_class_id, normalize_language, normalize_music_profile
+from klassenbildung.core.normalization import normalize_class_id
 
 CONFIG_DIR = Path("config")
 DEFAULT_SETTINGS_PATH = CONFIG_DIR / "settings.default.json"
 USER_SETTINGS_PATH = CONFIG_DIR / "settings.json"
 DEFAULT_CLASS_PROFILES_PATH = CONFIG_DIR / "class_profiles.default.json"
 USER_CLASS_PROFILES_PATH = CONFIG_DIR / "class_profiles.json"
+DEFAULT_CLASS_SIZE_TARGET = 30
+DEFAULT_CLASS_SIZE_COMFORT_TOLERANCE = 1
+DEFAULT_CLASS_SIZE_HARD_TOLERANCE = 2
+DEFAULT_CLASS_SIZE_SOFT_WEIGHT = 2000
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -30,11 +34,13 @@ def load_settings() -> OptimizationSettings:
 
 def settings_from_mapping(data: Mapping[str, Any]) -> OptimizationSettings:
     payload = {
-        "enforce_music_profile": bool(data.get("enforce_music_profile", False)),
-        "enforce_language_profile": bool(data.get("enforce_language_profile", False)),
+        "enforce_music_profile": False,
+        "enforce_language_profile": False,
         "solver_time_limit_seconds": int(data.get("solver_time_limit_seconds", 30)),
     }
     for key, default in DEFAULT_WEIGHTS.items():
+        payload[key] = int(data.get(key, default))
+    for key, default in DEFAULT_DISTRIBUTION_LIMITS.items():
         payload[key] = int(data.get(key, default))
     return OptimizationSettings(**payload)
 
@@ -50,6 +56,8 @@ def coerce_settings(value: object | None) -> OptimizationSettings:
         field_name: getattr(value, field_name, getattr(base, field_name))
         for field_name in OptimizationSettings.__dataclass_fields__
     }
+    payload["enforce_music_profile"] = False
+    payload["enforce_language_profile"] = False
     return OptimizationSettings(**payload)
 
 
@@ -73,19 +81,11 @@ def _class_config_from_dict(class_id: str, payload: dict[str, Any]) -> ClassConf
     )
     return ClassConfig(
         class_id=normalize_class_id(class_id) or class_id,
-        label=str(payload.get("label") or class_id),
+        label=normalize_class_id(class_id) or class_id,
         size_min=int(payload.get("size_min", 0)),
         size_max=int(payload.get("size_max", 30)),
-        music_allowed=[
-            value
-            for value in (normalize_music_profile(item) for item in payload.get("music_allowed", []))
-            if value
-        ],
-        languages_allowed=[
-            value
-            for value in (normalize_language(item) for item in payload.get("languages_allowed", []))
-            if value
-        ],
+        music_allowed=[],
+        languages_allowed=[],
         size_policy=size_policy,
     )
 
@@ -94,6 +94,7 @@ def load_class_configs() -> list[ClassConfig]:
     path = USER_CLASS_PROFILES_PATH if USER_CLASS_PROFILES_PATH.exists() else DEFAULT_CLASS_PROFILES_PATH
     data = _read_json(path) if path.exists() else {}
     configs = [_class_config_from_dict(class_id, payload) for class_id, payload in data.items()]
+    configs = _migrate_broad_default_class_sizes(configs)
     return sorted(configs, key=lambda cfg: cfg.class_id)
 
 
@@ -101,9 +102,9 @@ def save_class_configs(class_configs: list[ClassConfig]) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     data = {
         config.class_id: {
-            "label": config.label,
-            "music_allowed": config.music_allowed,
-            "languages_allowed": config.languages_allowed,
+            "label": config.class_id,
+            "music_allowed": [],
+            "languages_allowed": [],
             "size_min": config.size_min,
             "size_max": config.size_max,
             "size_policy": asdict(getattr(config, "size_policy", None)) if getattr(config, "size_policy", None) else None,
@@ -119,12 +120,12 @@ def generate_class_configs(
     class_count: int = 7,
     year: int = 5,
     target_size: int | None = None,
-    comfort_tolerance: int = 0,
-    hard_tolerance: int = 0,
-    class_size_soft_weight: int = 500,
+    comfort_tolerance: int = DEFAULT_CLASS_SIZE_COMFORT_TOLERANCE,
+    hard_tolerance: int = DEFAULT_CLASS_SIZE_HARD_TOLERANCE,
+    class_size_soft_weight: int = DEFAULT_CLASS_SIZE_SOFT_WEIGHT,
     existing_profiles: list[ClassConfig] | None = None,
 ) -> list[ClassConfig]:
-    existing_by_id = {config.class_id: config for config in existing_profiles or []}
+    del existing_profiles
     target = target_size if target_size is not None else math.ceil(total_students / class_count) if class_count else 0
     hard_tolerance = max(0, hard_tolerance)
     comfort_tolerance = max(0, min(comfort_tolerance, hard_tolerance))
@@ -140,15 +141,14 @@ def generate_class_configs(
 
     for index in range(class_count):
         class_id = f"{year}{chr(ord('a') + index)}"
-        profile = existing_by_id.get(class_id)
         configs.append(
             ClassConfig(
                 class_id=class_id,
-                label=profile.label if profile else class_id,
+                label=class_id,
                 size_min=hard_min,
                 size_max=hard_max,
-                music_allowed=profile.music_allowed if profile else [],
-                languages_allowed=profile.languages_allowed if profile else [],
+                music_allowed=[],
+                languages_allowed=[],
                 size_policy=size_policy,
             )
         )
@@ -162,11 +162,11 @@ def generate_class_configs(
             adjusted.append(
                 ClassConfig(
                     class_id=config.class_id,
-                    label=config.label,
+                    label=config.class_id,
                     size_min=config.size_min - reduce_by,
                     size_max=config.size_max,
-                    music_allowed=config.music_allowed,
-                    languages_allowed=config.languages_allowed,
+                    music_allowed=[],
+                    languages_allowed=[],
                     size_policy=getattr(config, "size_policy", None),
                 )
             )
@@ -177,13 +177,44 @@ def generate_class_configs(
         configs = [
             ClassConfig(
                 class_id=config.class_id,
-                label=config.label,
+                label=config.class_id,
                 size_min=config.size_min,
                 size_max=max(config.size_max, needed),
-                music_allowed=config.music_allowed,
-                languages_allowed=config.languages_allowed,
+                music_allowed=[],
+                languages_allowed=[],
                 size_policy=getattr(config, "size_policy", None),
             )
             for config in configs
         ]
     return configs
+
+
+def _migrate_broad_default_class_sizes(configs: list[ClassConfig]) -> list[ClassConfig]:
+    if not configs:
+        return configs
+    old_broad_default = (
+        len(configs) == 7
+        and all(config.size_min == 26 and config.size_max == 34 for config in configs)
+        and all(not config.music_allowed and not config.languages_allowed for config in configs)
+    )
+    if not old_broad_default:
+        return configs
+
+    policy = ClassSizePolicy(
+        target_size=DEFAULT_CLASS_SIZE_TARGET,
+        comfort_tolerance=DEFAULT_CLASS_SIZE_COMFORT_TOLERANCE,
+        hard_tolerance=DEFAULT_CLASS_SIZE_HARD_TOLERANCE,
+        soft_weight=DEFAULT_CLASS_SIZE_SOFT_WEIGHT,
+    )
+    return [
+        ClassConfig(
+            class_id=config.class_id,
+            label=config.label,
+            size_min=DEFAULT_CLASS_SIZE_TARGET - DEFAULT_CLASS_SIZE_HARD_TOLERANCE,
+            size_max=DEFAULT_CLASS_SIZE_TARGET + DEFAULT_CLASS_SIZE_HARD_TOLERANCE,
+            music_allowed=[],
+            languages_allowed=[],
+            size_policy=policy,
+        )
+        for config in configs
+    ]

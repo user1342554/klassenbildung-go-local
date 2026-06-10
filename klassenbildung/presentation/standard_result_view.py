@@ -45,11 +45,19 @@ class StandardResultViewModel:
 def build_standard_result_view_model(solver_result, student_count: int) -> StandardResultViewModel:
     reviews = review_candidates(solver_result, student_count)
     diagnostic = diagnostic_candidate(solver_result, student_count)
+    cards = [
+        {
+            "title": title,
+            "caption": caption,
+            **candidate_summary_to_record(summary),
+        }
+        for title, summary, caption in decision_candidate_cards(solver_result, student_count)
+    ]
     if reviews:
-        headline = "Prüfkandidaten gefunden"
+        headline = "Beste Lösung gefunden"
         message = (
             "Die strenge Profilvariante ist sozial nicht brauchbar. "
-            f"{len(reviews)} Varianten mit Profil-Lockerung erfüllen die soziale Mindestgrenze. "
+            "Angezeigt wird die beste Variante mit Profil-Lockerung. "
             "Keine automatische Freigabe: pädagogische Prüfung nötig."
         )
     else:
@@ -60,14 +68,7 @@ def build_standard_result_view_model(solver_result, student_count: int) -> Stand
         headline=headline,
         message=message,
         diagnostic=candidate_summary_to_record(diagnostic) if diagnostic else None,
-        cards=[
-            {
-                "title": title,
-                "caption": caption,
-                **candidate_summary_to_record(summary),
-            }
-            for title, summary, caption in decision_candidate_cards(solver_result, student_count)
-        ],
+        cards=cards,
     )
 
 

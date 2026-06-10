@@ -18,14 +18,6 @@ from klassenbildung.optimization.scoring import (
 from klassenbildung.presentation.result_view_model import CandidateSummary
 from klassenbildung.services.candidate_selection import review_candidates
 from klassenbildung.services.manual_rules import NoteReviewStatus
-from klassenbildung.validation.finality import (
-    GENDER_TARGET_MIN_CLASS_SIZE,
-    GENDER_TARGET_MIN,
-    GENDER_TARGET_MAX,
-    MAX_PRIMARY_SCHOOL_CLASS_PER_CLASS,
-    MAX_PRIMARY_SCHOOL_PER_CLASS,
-    MAX_SUPPORT_PER_CLASS,
-)
 
 
 ProfileType = Literal["language", "music"]
@@ -226,6 +218,7 @@ def build_candidate_review_model(
         mutual_rows,
         note_rows,
         class_load_rows,
+        settings,
     )
     return CandidateReviewModel(
         summary=summary,
@@ -270,6 +263,12 @@ def candidate_review_to_record(review: CandidateReviewModel) -> dict[str, object
         ),
         "converted_note_rules": sum(
             1 for row in review.students_with_manual_notes if row.review_status == NoteReviewStatus.CONVERTED_TO_RULE
+        ),
+        "deactivated_note_rules": sum(
+            1 for row in review.students_with_manual_notes if row.review_status == NoteReviewStatus.DEACTIVATED_RULE
+        ),
+        "unresolved_note_blockers": sum(
+            1 for row in review.students_with_manual_notes if row.review_status == NoteReviewStatus.UNRESOLVED_BLOCKER
         ),
         "fl_minority": sum(row.minority_count for row in review.fl_mixed_classes),
         "music_minority": sum(row.minority_count for row in review.music_mixed_classes),
@@ -439,6 +438,7 @@ def _review_warnings(
     mutual_rows: list[FriendshipRiskRow],
     note_rows: list[StudentNoteRow],
     class_load_rows: list[ClassLoadRow],
+    settings: OptimizationSettings,
 ) -> list[ReviewWarning]:
     warnings = []
     for violation in score.hard_violations:
@@ -456,59 +456,32 @@ def _review_warnings(
                 f"{len(mutual_rows)} getrennte gegenseitige Freundschaften.",
             )
         )
-    isolated_with_note = sum(1 for row in isolated_rows if row.has_manual_note)
-    if isolated_with_note:
-        warnings.append(
-            ReviewWarning(
-                ReviewWarningLevel.WARNING,
-                f"{isolated_with_note} Kinder ohne Wunschfreund haben eine manuelle Notiz.",
-            )
-        )
-    mutual_with_note = sum(1 for row in mutual_rows if row.has_manual_note)
-    if mutual_with_note:
-        warnings.append(
-            ReviewWarning(
-                ReviewWarningLevel.WARNING,
-                f"{mutual_with_note} getrennte gegenseitige Freundschaften enthalten eine manuelle Notiz.",
-            )
-        )
-    unreviewed_note_rows = [
-        row for row in note_rows if row.review_status == NoteReviewStatus.UNREVIEWED
-    ]
-    if unreviewed_note_rows:
-        warnings.append(
-            ReviewWarning(
-                ReviewWarningLevel.BLOCKER,
-                f"{len(unreviewed_note_rows)} ungeprüfte Notizen. Vor einer Freigabe als Regel oder Hinweis entscheiden.",
-            )
-        )
-    elif note_rows:
-        warnings.append(
-            ReviewWarning(
-                ReviewWarningLevel.INFO,
-                f"{len(note_rows)} manuelle Notizen sind als Regel oder Hinweis entschieden.",
-            )
-        )
     for row in class_load_rows:
-        if row.largest_school_count > MAX_PRIMARY_SCHOOL_PER_CLASS:
+        max_school = settings.max_primary_school_per_class
+        max_primary_class = settings.max_primary_school_class_per_class
+        max_support = settings.max_support_per_class
+        gender_min = settings.gender_target_min
+        gender_max = settings.gender_target_max
+        gender_min_size = settings.gender_target_min_class_size
+        if row.largest_school_count > max_school:
             warnings.append(
                 ReviewWarning(
                     ReviewWarningLevel.BLOCKER,
-                    f"{row.class_id}: Grundschulballung {row.largest_school_count}, erlaubt höchstens {MAX_PRIMARY_SCHOOL_PER_CLASS}.",
+                    f"{row.class_id}: Grundschulballung {row.largest_school_count}, erlaubt höchstens {max_school}.",
                 )
             )
-        if row.largest_primary_class_count > MAX_PRIMARY_SCHOOL_CLASS_PER_CLASS:
+        if row.largest_primary_class_count > max_primary_class:
             warnings.append(
                 ReviewWarning(
                     ReviewWarningLevel.BLOCKER,
-                    f"{row.class_id}: Grundschule/alte Klasse {row.largest_primary_class_count}, erlaubt höchstens {MAX_PRIMARY_SCHOOL_CLASS_PER_CLASS}.",
+                    f"{row.class_id}: Grundschule/alte Klasse {row.largest_primary_class_count}, erlaubt höchstens {max_primary_class}.",
                 )
             )
-        if row.support_count > MAX_SUPPORT_PER_CLASS:
+        if row.support_count > max_support:
             warnings.append(
                 ReviewWarning(
                     ReviewWarningLevel.BLOCKER,
-                    f"{row.class_id}: R-/Unterstützungsballung {row.support_count}, erlaubt höchstens {MAX_SUPPORT_PER_CLASS}.",
+                    f"{row.class_id}: R-/Unterstützungsballung {row.support_count}, erlaubt höchstens {max_support}.",
                 )
             )
         elif row.support_count >= 3:
@@ -518,13 +491,13 @@ def _review_warnings(
                     f"{row.class_id}: hohe R-/Unterstützungsballung ({row.support_count}).",
                 )
             )
-        if row.size >= GENDER_TARGET_MIN_CLASS_SIZE:
+        if row.size >= gender_min_size:
             gender_issues = [
                 f"m={row.male_count}"
-                if row.male_count < GENDER_TARGET_MIN or row.male_count > GENDER_TARGET_MAX
+                if row.male_count < gender_min or row.male_count > gender_max
                 else "",
                 f"w={row.female_count}"
-                if row.female_count < GENDER_TARGET_MIN or row.female_count > GENDER_TARGET_MAX
+                if row.female_count < gender_min or row.female_count > gender_max
                 else "",
             ]
             gender_issues = [issue for issue in gender_issues if issue]
@@ -532,9 +505,9 @@ def _review_warnings(
                 warnings.append(
                     ReviewWarning(
                         ReviewWarningLevel.WARNING,
-                        f"{row.class_id}: Geschlecht außerhalb Zielzone {GENDER_TARGET_MIN}-{GENDER_TARGET_MAX}: "
+                        f"{row.class_id}: Geschlecht außerhalb Zielzone {gender_min}-{gender_max}: "
                         + ", ".join(gender_issues)
-                        + ".",
+                        + ". Pädagogische Begründung erforderlich.",
                     )
                 )
     config_by_id = {config.class_id: config for config in class_configs}
@@ -552,7 +525,7 @@ def _review_warnings(
                 )
             )
     if not summary.gap_reliable:
-        warnings.append(ReviewWarning(ReviewWarningLevel.INFO, "Gültiger Prüfkandidat, aber nicht bewiesen optimal."))
+        warnings.append(ReviewWarning(ReviewWarningLevel.INFO, "Gültige Lösung, aber nicht bewiesen optimal."))
     return warnings
 
 

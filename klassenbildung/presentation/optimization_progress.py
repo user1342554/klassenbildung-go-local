@@ -90,19 +90,21 @@ def calculation_result_summary(solver_result, student_count: int) -> str:
         return "Die Berechnung konnte keine verwendbare Einteilung erzeugen. Prüfe zuerst Fehler, Klassengrößen und manuelle Regeln."
     if score.hard_violations:
         return "Die Berechnung hat eine Einteilung gefunden, aber feste Regeln werden verletzt. Diese Variante sollte nicht freigegeben werden."
+    return wishfriend_result_summary(solver_result, student_count)
+
+
+def wishfriend_result_summary(solver_result, student_count: int) -> str:
+    score = solver_result.score_report
+    if not score:
+        return "Keine Lösung gefunden."
     reviews = review_candidates(solver_result, student_count)
-    if reviews:
-        return (
-            "Die strenge Profilvariante war sozial nicht gut genug. Deshalb wurden zusätzliche prüfbare Varianten mit "
-            "etwas Profil-Lockerung gesucht."
-        )
-    threshold = solver_result.approval_threshold_without_wishfriend or int(student_count * 0.15)
-    if score.isolated_friend_request_count <= threshold:
-        return "Die festen Regeln sind erfüllt und die soziale Mindestgrenze wird erreicht."
-    return (
-        "Die festen Regeln sind erfüllt, aber es bleiben zu viele Kinder ohne erfüllten Wunschfreund. "
-        "Das Ergebnis braucht pädagogische Prüfung oder geänderte Vorgaben."
+    without_wishfriend = (
+        reviews[0].without_wishfriend
+        if reviews
+        else score.isolated_friend_request_count
     )
+    fulfilled = max(0, student_count - without_wishfriend)
+    return f"Lösung gefunden: {fulfilled} von {student_count} Kindern haben mindestens einen Wunschfreund in der Klasse."
 
 
 def step_for_phase_name(phase_name: str) -> CalculationStep | None:

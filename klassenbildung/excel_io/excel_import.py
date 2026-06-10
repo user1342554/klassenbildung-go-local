@@ -20,8 +20,21 @@ from klassenbildung.core.normalization import (
     normalize_gender,
     normalize_language,
     normalize_music_profile,
+    normalize_primary_class,
     normalize_string,
 )
+
+_WHITESPACE_CHECK_FIELDS = {
+    "nr": "Nr",
+    "school": "abgebende Schule",
+    "eligibility": "Eignung",
+    "gender": "Geschlecht",
+    "second_language": "2. Fremdsprache",
+    "music_profile": "Musikklasse",
+    "primary_class": "Klasse",
+    "friend1": "Freund 1",
+    "friend2": "Freund 2",
+}
 
 
 def import_excel(source: bytes | BinaryIO, filename: str | None = None) -> ImportResult:
@@ -62,6 +75,9 @@ def import_excel(source: bytes | BinaryIO, filename: str | None = None) -> Impor
         )
 
     students = parse_students(sheet, header_row)
+    cleanliness_messages = _raw_cell_cleanliness_messages(sheet, header_row)
+    header_messages = _header_messages(sheet, header_row)
+    normalization_messages = _primary_class_normalization_messages(sheet, header_row)
     detected_classes = sorted(
         {student.original_class for student in students if student.original_class},
         key=_class_sort_key,
@@ -73,6 +89,9 @@ def import_excel(source: bytes | BinaryIO, filename: str | None = None) -> Impor
             "INFO",
             f"{sum(1 for student in students if student.comment)} Bemerkungen gefunden.",
         ),
+        *header_messages,
+        *cleanliness_messages,
+        *normalization_messages,
     ]
 
     return ImportResult(
@@ -156,13 +175,84 @@ def build_student(row_number: int, raw: dict[str, Any]) -> Student:
         religion=normalize_string(raw.get("religion")),
         second_language=normalize_language(raw.get("second_language")),
         music_profile=music_profile,
-        primary_class=normalize_string(raw.get("primary_class")),
+        primary_class=normalize_primary_class(raw.get("primary_class")),
         friend1=normalize_string(raw.get("friend1")),
         friend2=normalize_string(raw.get("friend2")),
         comment=comment,
         note_text=comment,
         is_support=eligibility == "R",
     )
+
+
+def _raw_cell_cleanliness_messages(sheet: Worksheet, header_row: int) -> list[ValidationMessage]:
+    messages: list[ValidationMessage] = []
+    for row_number in range(header_row + 1, sheet.max_row + 1):
+        raw = {
+            field_name: sheet.cell(row=row_number, column=column_index).value
+            for column_index, field_name in COLUMN_BY_INDEX.items()
+        }
+        if not is_student_row(raw):
+            continue
+        for column_index, field_name in COLUMN_BY_INDEX.items():
+            if field_name not in _WHITESPACE_CHECK_FIELDS:
+                continue
+            value = sheet.cell(row=row_number, column=column_index).value
+            if isinstance(value, str) and value != value.strip():
+                messages.append(
+                    ValidationMessage(
+                        "WARNUNG",
+                        "Wert enthält führende oder abschließende Leerzeichen.",
+                        row_number,
+                        _WHITESPACE_CHECK_FIELDS[field_name],
+                        repr(value),
+                    )
+                )
+    return messages
+
+
+def _header_messages(sheet: Worksheet, header_row: int) -> list[ValidationMessage]:
+    headers = [
+        normalize_string(sheet.cell(row=header_row, column=column).value) or ""
+        for column in range(1, 21)
+    ]
+    if sum(1 for header in headers if header.lower() == "klasse") < 2:
+        return []
+    return [
+        ValidationMessage(
+            "INFO",
+            'Doppelte Überschrift "Klasse" erkannt; Spalte A wird als Zielklasse und Spalte Q als Grundschulklasse verarbeitet.',
+            header_row,
+            "Klasse",
+        )
+    ]
+
+
+def _primary_class_normalization_messages(sheet: Worksheet, header_row: int) -> list[ValidationMessage]:
+    labels: dict[str, int] = {}
+    for row_number in range(header_row + 1, sheet.max_row + 1):
+        raw = {
+            field_name: sheet.cell(row=row_number, column=column_index).value
+            for column_index, field_name in COLUMN_BY_INDEX.items()
+        }
+        if not is_student_row(raw):
+            continue
+        raw_text = normalize_string(raw.get("primary_class"))
+        normalized = normalize_primary_class(raw.get("primary_class"))
+        if not raw_text or not normalized or raw_text == normalized:
+            continue
+        label = f"{raw_text} -> {normalized}"
+        labels[label] = labels.get(label, 0) + 1
+    if not labels:
+        return []
+    summary = "; ".join(f"{label} ({count}x)" for label, count in sorted(labels.items()))
+    return [
+        ValidationMessage(
+            "INFO",
+            "Grundschulklassen wurden für die Ballungsbewertung normalisiert.",
+            column="Klasse",
+            value=summary,
+        )
+    ]
 
 
 def derive_music_profile(raw: dict[str, Any]) -> str | None:

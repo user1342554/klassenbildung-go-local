@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import io
-
-from openpyxl import load_workbook
-
 from klassenbildung.core.models import ClassConfig, OptimizationSettings, ProfileSlackReport, SolverResult, Student
-from klassenbildung.excel_io.excel_export import export_excel
 from klassenbildung.optimization.solver import solve_assignments
 from klassenbildung.presentation.candidate_summary import (
     CANDIDATE_SUMMARY_FIELDS,
     candidate_summary_records,
 )
 from klassenbildung.presentation.expert_result_view import expert_solver_diagnostic_text
+from klassenbildung.presentation.optimization_progress import calculation_result_summary
 from klassenbildung.presentation.standard_result_view import (
     STANDARD_MODE_FORBIDDEN_SOLVER_JARGON,
     all_candidate_summary_records_for_standard_view,
@@ -21,7 +17,7 @@ from klassenbildung.presentation.wording import candidate_tradeoff_text
 from klassenbildung.services.candidate_selection import decision_candidate_cards, review_candidates
 
 
-def test_candidate_cards_put_balanced_candidate_before_social_strongest() -> None:
+def test_candidate_cards_show_only_best_candidate() -> None:
     solver_result = SolverResult(
         "FEASIBLE",
         {},
@@ -34,8 +30,33 @@ def test_candidate_cards_put_balanced_candidate_before_social_strongest() -> Non
 
     cards = decision_candidate_cards(solver_result, 210)
 
-    assert [summary.key for _, summary, _ in cards] == ["E", "F", "C"]
-    assert cards[0][0] == "E - am ausgewogensten"
+    assert [summary.key for _, summary, _ in cards] == ["F"]
+    assert cards[0][0] == "F - beste Lösung"
+
+
+def test_calculation_summary_is_short_wishfriend_count() -> None:
+    solver_result = SolverResult(
+        "FEASIBLE",
+        {},
+        profile_slack_reports=[
+            _report("A streng", isolated=58, fl_actual=1, music_actual=1, fl_allowed=1, music_allowed=1),
+            _report("E beide +1", isolated=28, fl_actual=2, music_actual=2, fl_allowed=2, music_allowed=2),
+            _report("F mehr Profil-Slack", isolated=21, fl_actual=2, music_actual=3, fl_allowed=2, music_allowed=3),
+        ],
+    )
+    score = type("Score", (), {"hard_violations": [], "isolated_friend_request_count": 58})()
+    solver_result = SolverResult(
+        solver_result.status,
+        solver_result.assignments,
+        score_report=score,
+        profile_slack_reports=solver_result.profile_slack_reports,
+    )
+
+    text = calculation_result_summary(solver_result, 210)
+
+    assert text == "Lösung gefunden: 189 von 210 Kindern haben mindestens einen Wunschfreund in der Klasse."
+    assert "strenge Profilvariante" not in text
+    assert "Profil-Lockerung" not in text
 
 
 def test_e_wording_does_not_claim_socially_better_than_c_when_c_has_less_isolation() -> None:
@@ -56,7 +77,7 @@ def test_e_wording_does_not_claim_socially_better_than_c_when_c_has_less_isolati
     assert "besser sozial" not in text
 
 
-def test_candidate_summary_is_single_source_for_ui_json_export() -> None:
+def test_candidate_summary_is_single_source_for_ui_json() -> None:
     solver_result = SolverResult(
         "FEASIBLE",
         {},
@@ -110,12 +131,10 @@ def test_candidate_summary_is_single_source_for_ui_json_export() -> None:
 
     json_records = _records_by_key(candidate_summary_records(solver_result, 210))
     ui_records = _records_by_key(all_candidate_summary_records_for_standard_view(solver_result, 210))
-    excel_records = _records_by_key(_excel_candidate_records(solver_result))
 
     for key in ("A", "C", "E", "F"):
         for field in CANDIDATE_SUMMARY_FIELDS:
             assert ui_records[key][field] == json_records[key][field]
-            assert excel_records[key][field] == json_records[key][field]
 
 
 def test_debug_payload_uses_explicit_candidate_roles() -> None:
@@ -311,19 +330,3 @@ def _student(index: int, language: str, music: str = "Reg", *, friend1: str | No
 
 def _records_by_key(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
     return {str(record["key"]): record for record in records}
-
-
-def _excel_candidate_records(solver_result: SolverResult) -> list[dict[str, object]]:
-    exported = export_excel(
-        None,
-        [],
-        {},
-        [],
-        None,
-        [],
-        profile_slack_reports=solver_result.profile_slack_reports,
-    )
-    workbook = load_workbook(io.BytesIO(exported))
-    rows = list(workbook["Kandidaten"].iter_rows(values_only=True))
-    header = list(rows[0])
-    return [dict(zip(header, row, strict=True)) for row in rows[1:]]

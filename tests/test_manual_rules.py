@@ -118,6 +118,22 @@ def test_note_review_status_counts_kept_and_converted_notes() -> None:
     }
 
 
+def test_note_review_status_tracks_deactivated_and_unresolved_notes() -> None:
+    deactivated = create_manual_rule_entry(
+        ManualRule("SEPARATE", "s1", "s2"),
+        source="note",
+        note_student_id="s1",
+        active=False,
+    )
+
+    statuses = note_review_status_by_student([deactivated], set(), {"s2"})
+
+    assert statuses == {
+        "s1": NoteReviewStatus.DEACTIVATED_RULE,
+        "s2": NoteReviewStatus.UNRESOLVED_BLOCKER,
+    }
+
+
 def test_student_data_hash_changes_only_when_student_data_changes() -> None:
     students = [_student(1), _student(2)]
     same_students = [_student(1), _student(2)]

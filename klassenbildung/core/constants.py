@@ -60,3 +60,12 @@ DEFAULT_WEIGHTS = {
     "weight_religion": 0,
     "weight_keep_existing": 0,
 }
+
+DEFAULT_DISTRIBUTION_LIMITS = {
+    "max_primary_school_per_class": 10,
+    "max_primary_school_class_per_class": 6,
+    "max_support_per_class": 4,
+    "gender_target_min": 12,
+    "gender_target_max": 18,
+    "gender_target_min_class_size": 24,
+}

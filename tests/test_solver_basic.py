@@ -773,6 +773,74 @@ def test_support_distribution_penalty_is_nonlinear_after_tolerance() -> None:
     assert score.total_score == 10800
 
 
+def test_solver_rejects_primary_school_above_hard_limit() -> None:
+    pytest.importorskip("ortools")
+    students = [
+        replace(_student(index, "F"), school="Grundschule A", primary_class=f"4{chr(96 + index)}")
+        for index in range(1, 13)
+    ]
+    classes = [
+        ClassConfig("5a", "5a", 6, 6, [], []),
+        ClassConfig("5b", "5b", 6, 6, [], []),
+    ]
+    settings = _zero_settings(
+        max_primary_school_per_class=5,
+        max_primary_school_class_per_class=12,
+        max_support_per_class=12,
+    )
+
+    result = solve_assignments(students, classes, settings)
+
+    assert result.status == "INFEASIBLE"
+
+
+def test_solver_rejects_primary_school_class_above_hard_limit() -> None:
+    pytest.importorskip("ortools")
+    students = [
+        replace(_student(index, "F"), school="Grundschule A", primary_class="4a")
+        for index in range(1, 15)
+    ]
+    classes = [
+        ClassConfig("5a", "5a", 7, 7, [], []),
+        ClassConfig("5b", "5b", 7, 7, [], []),
+    ]
+    settings = _zero_settings(
+        max_primary_school_per_class=20,
+        max_primary_school_class_per_class=6,
+        max_support_per_class=20,
+    )
+
+    result = solve_assignments(students, classes, settings)
+
+    assert result.status == "INFEASIBLE"
+
+
+def test_solver_rejects_support_count_above_hard_limit() -> None:
+    pytest.importorskip("ortools")
+    students = [
+        replace(
+            _student(index, "F"),
+            school=f"Grundschule {index}",
+            primary_class=f"4{chr(96 + index)}",
+            is_support=True,
+        )
+        for index in range(1, 11)
+    ]
+    classes = [
+        ClassConfig("5a", "5a", 5, 5, [], []),
+        ClassConfig("5b", "5b", 5, 5, [], []),
+    ]
+    settings = _zero_settings(
+        max_primary_school_per_class=10,
+        max_primary_school_class_per_class=10,
+        max_support_per_class=4,
+    )
+
+    result = solve_assignments(students, classes, settings)
+
+    assert result.status == "INFEASIBLE"
+
+
 def test_music_focus_shortfall_penalizes_reg_majority_in_focus_class() -> None:
     students = [_student(index, "F", "B") for index in range(1, 7)] + [
         _student(index, "F", "Reg") for index in range(7, 27)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter, defaultdict
-from typing import Callable
+from typing import Callable, Iterable
 
 from klassenbildung.core.normalization import normalize_primary_class
 from klassenbildung.core.models import (
@@ -16,19 +16,31 @@ from klassenbildung.core.models import (
 
 
 def resolve_student_ref(students: list[Student], reference: str | None) -> Student | None:
+    matches = student_ref_candidates(students, reference)
+    return matches[0] if len(matches) == 1 else None
+
+
+def student_ref_candidates(students: list[Student], reference: str | None) -> list[Student]:
     if not reference:
-        return None
+        return []
     needle = reference.strip().lower()
+    for matcher in (
+        lambda student: student.internal_id.lower(),
+        lambda student: (student.nr or "").lower(),
+        lambda student: student.full_name.lower(),
+        lambda student: student.sort_name.lower(),
+    ):
+        matches = _unique_students(student for student in students if needle and needle == matcher(student))
+        if matches:
+            return matches
+    return []
+
+
+def _unique_students(students: Iterable[Student]) -> list[Student]:
+    unique: dict[str, Student] = {}
     for student in students:
-        candidates = {
-            student.internal_id.lower(),
-            (student.nr or "").lower(),
-            student.full_name.lower(),
-            student.sort_name.lower(),
-        }
-        if needle in candidates:
-            return student
-    return None
+        unique[student.internal_id] = student
+    return list(unique.values())
 
 
 def score_solution(

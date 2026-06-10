@@ -85,16 +85,9 @@ def test_full_manual_workflow_note_rule_solve_review_export() -> None:
     )
     workbook = load_workbook(io.BytesIO(exported))
 
-    assert workbook["Manuelle Regeln"]["A2"].value == "aktiv"
-    assert workbook["Notizen"]["C2"].value == "in Regel umgewandelt"
-    assert "Manuelle Änderungen" not in workbook.sheetnames
-    overview = {
-        row[0]: row[1]
-        for row in workbook["Übersicht"].iter_rows(min_row=2, values_only=True)
-        if row[0]
-    }
-    assert overview["Anzahl aktiver Regeln"] == 1
-    assert overview["Anzahl ungeprüfter Notizen"] == 0
+    assert workbook.sheetnames == ["Basis", "5a", "5b"]
+    assert {workbook["Basis"][f"A{row}"].value for row in range(1, 5)} == {"5a", "5b"}
+    assert workbook["5a"].max_row + workbook["5b"].max_row == 6
 
 
 def _summary_from_solver_result(assignments: dict[str, str], score, student_count: int) -> CandidateSummary:

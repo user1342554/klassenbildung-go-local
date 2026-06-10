@@ -152,6 +152,12 @@ class OptimizationSettings:
     weight_keep_existing: int = 0
 
     solver_time_limit_seconds: int = 30
+    max_primary_school_per_class: int = 10
+    max_primary_school_class_per_class: int = 6
+    max_support_per_class: int = 4
+    gender_target_min: int = 12
+    gender_target_max: int = 18
+    gender_target_min_class_size: int = 24
 
 
 @dataclass(frozen=True)

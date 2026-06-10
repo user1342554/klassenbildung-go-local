@@ -1,6 +1,6 @@
 {
-  "enforce_music_profile": true,
-  "enforce_language_profile": true,
+  "enforce_music_profile": false,
+  "enforce_language_profile": false,
   "weight_music_profile": 0,
   "weight_language_profile": 0,
   "weight_mixed_language_class": 10000,
@@ -19,5 +19,11 @@
   "weight_nationality": 0,
   "weight_religion": 0,
   "weight_keep_existing": 0,
-  "solver_time_limit_seconds": 30
+  "solver_time_limit_seconds": 30,
+  "max_primary_school_per_class": 10,
+  "max_primary_school_class_per_class": 6,
+  "max_support_per_class": 4,
+  "gender_target_min": 12,
+  "gender_target_max": 18,
+  "gender_target_min_class_size": 24
 }

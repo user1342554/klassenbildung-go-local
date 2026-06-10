@@ -8,14 +8,12 @@ Oeffne die App und lade die Schuelerliste hoch. Wenn sich die Schuelerdaten seit
 
 ## 2. Profile und Bemerkungen pruefen
 
-Pruefe in den Einstellungen die festen Klassenprofile. Wenn Klassennamen wie
-5a S/Reg + F/L oder 5e G/Reg + F/L verbindlich sind, muessen Sprach- und
-Musikprofile als harte Regeln aktiv bleiben.
+Die App arbeitet ohne feste Klassenprofile. Musik- und Sprachverteilung werden
+von der Berechnung entschieden; Klassennamen wie 5a oder 5e erzwingen keine
+vorgegebene S-, B-, G-, F- oder L-Klasse.
 
-Reg bedeutet dabei einen neutralen Fueller. Ein Reg-Kind darf nur dann in eine
-Profilklasse, wenn Reg in dieser Klasse ausdruecklich erlaubt ist. Die
-Musik-Mischklassen-Kennzahl zaehlt nur Mischungen zwischen B, S und G; Reg ist
-keine zweite Profilgruppe.
+Reg bedeutet dabei einen neutralen Fueller. Die Musik-Mischklassen-Kennzahl
+zaehlt nur Mischungen zwischen B, S und G; Reg ist keine zweite Profilgruppe.
 
 Pruefe danach die Bemerkungen. Eindeutige Hinweise werden vorbefuellt, zum
 Beispiel:
@@ -27,21 +25,28 @@ Beispiel:
 Unklare Hinweise wie "nicht mit Schwester" muessen bewusst geklaert werden,
 weil die App den zweiten Schueler nicht erraten soll.
 
+Die V18-Freigabegrenzen werden dokumentiert: gleiche Grundschule hoechstens 10 Kinder je
+Klasse, gleiche Grundschule plus alte Klasse hoechstens 6 Kinder je Klasse, und
+R-/Unterstuetzungsmarkierungen hoechstens 4 je Klasse. Wird eine Grenze
+ueberschritten, zeigt die App den Befund im Ergebnis und im Export.
+Die Klassengroesse ist standardmaessig hart auf 28-32 Kinder begrenzt; 29-31
+ist der bevorzugte Zielbereich.
+
 ## 3. Ergebnis berechnen
 
-Starte die Berechnung. Die Standardansicht zeigt danach, ob die strenge Profilvariante brauchbar ist und welche Pruefkandidaten vorliegen.
+Starte die Berechnung. Die Standardansicht zeigt danach, ob die strenge Profilvariante brauchbar ist und welche beste Loesung verwendet werden soll.
 
 Normalerweise gilt:
 
-- E ist der erste ausgewogene Pruefkandidat.
-- F ist die sozial staerkste Alternative.
-- C schuetzt F/L am staerksten, kann aber Musik staerker belasten.
+- Die App zeigt nur eine beste Loesung.
+- Weitere Vergleichsvarianten sind kein normaler Schulablauf.
+- Diese Loesung wird als Grundlage fuer Pruefung und Export verwendet.
 
-Keine Variante wird automatisch freigegeben, wenn eine paedagogische Pruefung noetig ist.
+Die Loesung wird nicht automatisch freigegeben, wenn eine paedagogische Pruefung noetig ist.
 
-## 4. Kandidat oeffnen
+## 4. Loesung oeffnen
 
-Oeffne zuerst den empfohlenen Pruefkandidaten. In der Kandidatenpruefung stehen die wichtigen Listen:
+Oeffne die vorgeschlagene Loesung. In der Pruefung stehen die wichtigen Listen:
 
 - Kinder ohne Wunschfreund
 - getrennte gegenseitige Freundschaften
@@ -83,7 +88,7 @@ Wenn die Regeln widerspruechlich oder zu eng sind, zeigt die App blockierende Fe
 
 ## 8. Ergebnis erneut pruefen
 
-Pruefe den neuen Kandidaten wieder in der Kandidatenpruefung:
+Pruefe die neue Loesung wieder in der Loesungspruefung:
 
 - Kinder ohne Wunschfreund
 - getrennte gegenseitige Freundschaften
@@ -95,31 +100,16 @@ Entscheide anhand dieser Listen, ob die neue Loesung besser pruefbar ist als das
 
 ## 9. Export erzeugen
 
-Waehle vor dem Download bewusst die Exportgrundlage:
+Die App nimmt automatisch die beste dokumentierte Loesung als Exportgrundlage.
+Der Excel-Export enthaelt nur noch das Blatt `Basis` und je ein Klassenblatt
+fuer 5a, 5b, 5c und so weiter.
 
-- Score-beste Loesung: niedrigster dokumentierter Punktwert, normalerweise die erste Empfehlung
-- Regelkonform: aktuelle Ergebnisliste ohne harte Regelverletzungen
-- Profilminimal: strengere Vergleichsrichtung mit moeglichst wenigen Mischklassen
-- Ausgewogen: Profilkosten und soziale Werte gemeinsam pruefen
-- Sozialoptimiert: staerkste soziale Kennzahlen unter den Pruefkandidaten
-
-Wenn die gewaehlte Exportgrundlage nicht die score-beste dokumentierte Loesung
-ist, zeigt die App vor dem Download eine Warnung. Der Excel-Export schreibt in
-der Uebersicht mit, welcher Kandidat wirklich als Klassenliste exportiert wurde.
-
-Solange offene Notizen oder harte Blocker vorhanden sind, ist der Finalexport
-gesperrt. Die Datei ist dann ausdruecklich ein Pruefexport und die Uebersicht
-zeigt die Finalitaets-Ampel auf rot.
+Offene Notizen, Datenprobleme und Warnungen bleiben in der App sichtbar. Sie
+werden nicht mehr als eigene Excel-Blaetter exportiert.
 
 Die App vergleicht lokal gespeicherte Bestkandidaten mit neu berechneten
 Kandidaten. Dadurch geht eine frueher bessere Einteilung nicht verloren,
 solange Eingabedaten, Profile, Einstellungen und aktive Regeln gleich bleiben.
-
-Der Export dokumentiert:
-
-- aktive und deaktivierte Regeln
-- Notizstatus
-- Kandidatendetails
 
 Der Export enthaelt sensible Schuelerdaten. Teile ihn nur mit berechtigten Personen.
 

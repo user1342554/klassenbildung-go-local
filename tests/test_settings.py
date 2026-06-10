@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from klassenbildung.core.settings import coerce_settings, generate_class_configs, settings_from_mapping
+from klassenbildung.core.settings import coerce_settings, generate_class_configs, load_class_configs, settings_from_mapping
 
 
 def test_settings_from_old_mapping_adds_new_profile_weights() -> None:
@@ -25,6 +25,11 @@ def test_settings_from_old_mapping_adds_new_profile_weights() -> None:
     assert settings.weight_music_minority_student == 1200
     assert settings.weight_no_friend == 12000
     assert settings.weight_mutual_friend == 10000
+    assert settings.max_primary_school_per_class == 10
+    assert settings.max_primary_school_class_per_class == 6
+    assert settings.max_support_per_class == 4
+    assert settings.gender_target_min == 12
+    assert settings.gender_target_max == 18
 
 
 def test_coerce_old_session_object_adds_missing_fields() -> None:
@@ -46,7 +51,7 @@ def test_coerce_old_session_object_adds_missing_fields() -> None:
     settings = coerce_settings(old_settings)
 
     assert settings.enforce_music_profile is False
-    assert settings.enforce_language_profile is True
+    assert settings.enforce_language_profile is False
     assert settings.weight_friend1 == 111
     assert settings.weight_music_profile == 0
     assert settings.weight_language_profile == 0
@@ -56,6 +61,23 @@ def test_coerce_old_session_object_adds_missing_fields() -> None:
     assert settings.weight_music_minority_student == 1200
     assert settings.weight_no_friend == 12000
     assert settings.weight_mutual_friend == 10000
+    assert settings.max_primary_school_per_class == 10
+    assert settings.max_primary_school_class_per_class == 6
+    assert settings.max_support_per_class == 4
+    assert settings.gender_target_min == 12
+    assert settings.gender_target_max == 18
+
+
+def test_settings_ignore_legacy_profile_enforcement_flags() -> None:
+    settings = settings_from_mapping(
+        {
+            "enforce_music_profile": True,
+            "enforce_language_profile": True,
+        }
+    )
+
+    assert settings.enforce_music_profile is False
+    assert settings.enforce_language_profile is False
 
 
 def test_generate_class_configs_uses_target_size_with_hard_tolerance() -> None:
@@ -72,6 +94,7 @@ def test_generate_class_configs_uses_target_size_with_hard_tolerance() -> None:
     assert {config.size_max for config in configs} == {35}
     assert {config.size_policy.comfort_min for config in configs if config.size_policy} == {28}
     assert {config.size_policy.comfort_max for config in configs if config.size_policy} == {32}
+    assert all(not config.music_allowed and not config.languages_allowed for config in configs)
 
 
 def test_generate_class_configs_keeps_total_capacity_possible() -> None:
@@ -80,3 +103,12 @@ def test_generate_class_configs_keeps_total_capacity_possible() -> None:
     assert sum(config.size_min for config in configs) <= 40
     assert sum(config.size_max for config in configs) >= 40
     assert {config.size_max for config in configs} == {20}
+
+
+def test_loaded_default_class_configs_use_tight_hard_range() -> None:
+    configs = load_class_configs()
+
+    assert {config.size_min for config in configs} == {28}
+    assert {config.size_max for config in configs} == {32}
+    assert {config.size_policy.comfort_min for config in configs if config.size_policy} == {29}
+    assert {config.size_policy.comfort_max for config in configs if config.size_policy} == {31}

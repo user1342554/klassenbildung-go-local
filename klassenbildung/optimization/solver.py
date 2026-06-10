@@ -18,6 +18,7 @@ from klassenbildung.core.models import (
     SolverPhaseReport,
     Student,
 )
+from klassenbildung.core.normalization import normalize_primary_class
 from klassenbildung.optimization.scoring import (
     build_friend_relationships,
     friend_relationship_weight,
@@ -125,6 +126,7 @@ def solve_assignments(
                 model.Add(x[(i, c)] == 0)
 
     _add_manual_rule_constraints(model, x, students, class_configs, manual_rules)
+    _add_hard_distribution_constraints(model, x, students, class_configs, settings)
 
     phase_reports: list[SolverPhaseReport] = []
     profile_statuses: list[str] = []
@@ -404,7 +406,7 @@ def solve_assignments(
             slack_candidates=slack_candidates,
             message=(
                 "Strenge Profilvariante gefunden; mit diesen Profilgrenzen ist die soziale Mindestqualität "
-                "nicht freigabefähig. Mit Profil-Lockerung wurden soziale Prüfkandidaten gesucht."
+                "nicht freigabefähig. Mit Profil-Lockerung wurden soziale Lösungen gesucht."
             ),
             **profile_metadata,
             **_solution_metadata(
@@ -421,6 +423,7 @@ def solve_assignments(
         language_mixed_limit=language_mixed_limit,
         music_mixed_limit=music_mixed_limit,
         no_friend_limit=no_friend_limit,
+        settings=settings,
     )
     if incumbent_violations:
         failed_phase_report = _build_skipped_phase_report("5 Gegenseitige Freunde retten")
@@ -826,7 +829,7 @@ def solve_assignments(
         x,
         students,
         class_configs,
-        lambda student: student.primary_class,
+        _primary_school_class_group_key,
         settings.weight_primary_class,
         objective_terms,
         "primary_class",
@@ -979,6 +982,7 @@ def _solve_no_friend_target_phase(
                 target_model.Add(x[(i, c)] == 0)
 
     _add_manual_rule_constraints(target_model, x, students, class_configs, manual_rules)
+    _add_hard_distribution_constraints(target_model, x, students, class_configs, settings)
 
     language_terms: list = []
     _add_mixed_language_terms(
@@ -1074,6 +1078,7 @@ def _solve_no_friend_min_phase(
                 target_model.Add(x[(i, c)] == 0)
 
     _add_manual_rule_constraints(target_model, x, students, class_configs, manual_rules)
+    _add_hard_distribution_constraints(target_model, x, students, class_configs, settings)
 
     language_terms: list = []
     _add_mixed_language_terms(
@@ -1537,7 +1542,7 @@ def _cached_profile_candidate(
         assignments,
         solution_source="cached_incumbent",
     )
-    if not _candidate_fits_limits(candidate, language_limit, music_limit):
+    if not _candidate_fits_limits(candidate, language_limit, music_limit, settings):
         return None
     return candidate
 
@@ -1555,6 +1560,8 @@ def _save_profile_incumbents(
     for candidate in candidate_by_variant.values():
         if not candidate.assignments or not candidate.score:
             continue
+        if not _candidate_fits_limits(candidate, candidate.language_mixed_limit, candidate.music_mixed_limit, settings):
+            continue
         key = _limit_cache_key(candidate.language_mixed_limit, candidate.music_mixed_limit)
         existing_assignments = cache.get(key)
         if existing_assignments:
@@ -1565,7 +1572,7 @@ def _save_profile_incumbents(
                 assignments=existing_assignments,
                 solution_source="cached_incumbent",
             )
-            if not _candidate_fits_limits(existing_candidate, candidate.language_mixed_limit, candidate.music_mixed_limit):
+            if not _candidate_fits_limits(existing_candidate, candidate.language_mixed_limit, candidate.music_mixed_limit, settings):
                 cache[key] = dict(candidate.assignments)
                 continue
             if not _is_candidate_better(candidate, existing_candidate):
@@ -1623,7 +1630,7 @@ def seed_profile_incumbent_assignments(
 ) -> ScoreReport:
     manual_rules = manual_rules or []
     score = score_solution(students, assignments, settings, class_configs, manual_rules)
-    if score.hard_violations:
+    if score.hard_violations or _distribution_limit_violations(score, settings):
         return score
     candidate = _profile_candidate_from_score(
         "Gespeicherter Bestkandidat",
@@ -1718,12 +1725,14 @@ def _candidate_fits_limits(
     candidate: _ProfileVariantCandidate,
     language_limit: int,
     music_limit: int,
+    settings: OptimizationSettings | None = None,
 ) -> bool:
     score = candidate.score
     return bool(
         score
         and candidate.assignments
         and not score.hard_violations
+        and not _distribution_limit_violations(score, settings)
         and score.mixed_language_class_count <= language_limit
         and score.mixed_music_class_count <= music_limit
     )
@@ -1849,13 +1858,13 @@ def _recommendation_role_for_candidate(
     )
     if candidate.variant == "C Musik +2":
         if social_limit_met:
-            return "F/L-schonender Prüfkandidat"
+            return "F/L-schonende Lösung"
         if _is_near_miss(score, approval_limit):
             return "F/L-schonender Near-Miss"
         return "F/L streng, Musik gelockert"
     if candidate.variant == "E beide +1":
         if social_limit_met:
-            return "Balancierter Prüfkandidat"
+            return "Balancierte Lösung"
         if best_over_limit and best_over_limit.variant == candidate.variant:
             return "Bester aktueller Suchkandidat"
         return None
@@ -2004,6 +2013,7 @@ def _solve_refined_profile_variant(
                 model.Add(x[(i, c)] == 0)
 
     _add_manual_rule_constraints(model, x, students, class_configs, manual_rules)
+    _add_hard_distribution_constraints(model, x, students, class_configs, settings)
 
     language_terms: list = []
     _add_mixed_language_terms(model, x, students, class_configs, 1, 0, language_terms, "refine_language_count")
@@ -2237,7 +2247,7 @@ def _refinement_final_terms(model, x, students, class_configs, settings, prefix:
         x,
         students,
         class_configs,
-        lambda student: student.primary_class,
+        _primary_school_class_group_key,
         settings.weight_primary_class,
         terms,
         f"{prefix}_primary_class",
@@ -2330,6 +2340,7 @@ def _incumbent_limit_violations(
     language_mixed_limit: int,
     music_mixed_limit: int,
     no_friend_limit: int,
+    settings: OptimizationSettings,
 ) -> list[str]:
     violations = []
     if score.mixed_language_class_count > language_mixed_limit:
@@ -2338,7 +2349,32 @@ def _incumbent_limit_violations(
         violations.append(f"Musik-Mischklassen {score.mixed_music_class_count} > {music_mixed_limit}")
     if score.isolated_friend_request_count > no_friend_limit:
         violations.append(f"Ohne Wunschfreund {score.isolated_friend_request_count} > {no_friend_limit}")
+    violations.extend(_distribution_limit_violations(score, settings))
     return violations
+
+
+def _distribution_limit_violations(score, settings: OptimizationSettings | None) -> list[str]:
+    if not score or settings is None:
+        return []
+    violations = []
+    for report in score.class_reports:
+        school_count = _largest_count(report.school_counts)
+        if school_count > settings.max_primary_school_per_class:
+            violations.append(
+                f"{report.class_id}: Grundschulballung {school_count} > {settings.max_primary_school_per_class}"
+            )
+        primary_class_count = _largest_count(report.primary_class_counts)
+        if primary_class_count > settings.max_primary_school_class_per_class:
+            violations.append(
+                f"{report.class_id}: Grundschule/alte Klasse {primary_class_count} > {settings.max_primary_school_class_per_class}"
+            )
+        if report.support_count > settings.max_support_per_class:
+            violations.append(f"{report.class_id}: R {report.support_count} > {settings.max_support_per_class}")
+    return violations
+
+
+def _largest_count(counts: dict[str, int]) -> int:
+    return max((count for key, count in counts.items() if key != "leer"), default=0)
 
 
 def _build_phase_report(
@@ -2464,6 +2500,65 @@ def _add_manual_rule_constraints(model, x, students, class_configs, manual_rules
             b = students.index(student_b)
             for c in range(len(class_configs)):
                 model.Add(x[(a, c)] + x[(b, c)] <= 1)
+
+
+def _add_hard_distribution_constraints(
+    model,
+    x,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    settings: OptimizationSettings,
+) -> None:
+    _add_group_upper_bound_constraints(
+        model,
+        x,
+        students,
+        class_configs,
+        lambda student: student.school,
+        settings.max_primary_school_per_class,
+    )
+    _add_group_upper_bound_constraints(
+        model,
+        x,
+        students,
+        class_configs,
+        _primary_school_class_group_key,
+        settings.max_primary_school_class_per_class,
+    )
+    support_indexes = [index for index, student in enumerate(students) if student.is_support]
+    if support_indexes and settings.max_support_per_class >= 0:
+        for c in range(len(class_configs)):
+            model.Add(sum(x[(index, c)] for index in support_indexes) <= settings.max_support_per_class)
+
+
+def _add_group_upper_bound_constraints(
+    model,
+    x,
+    students: list[Student],
+    class_configs: list[ClassConfig],
+    getter: Callable[[Student], str | None],
+    upper_bound: int,
+) -> None:
+    if upper_bound < 0:
+        return
+    grouped: dict[str, list[int]] = defaultdict(list)
+    for index, student in enumerate(students):
+        key = getter(student)
+        if key:
+            grouped[key].append(index)
+    for indexes in grouped.values():
+        if len(indexes) <= upper_bound:
+            continue
+        for c in range(len(class_configs)):
+            model.Add(sum(x[(index, c)] for index in indexes) <= upper_bound)
+
+
+def _primary_school_class_group_key(student: Student) -> str | None:
+    primary_class = normalize_primary_class(student.primary_class)
+    if not primary_class:
+        return None
+    school = (student.school or "unbekannte Schule").strip() or "unbekannte Schule"
+    return f"{school} / {primary_class}"
 
 
 def _add_friend_relationship_terms(

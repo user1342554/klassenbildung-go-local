@@ -19,7 +19,7 @@ def candidate_summary_text(summary: CandidateSummary) -> str:
         return "soziale Grenze nicht erfüllt"
     if summary.gap_reliable:
         return "sozial im Zielbereich und technisch belastbar"
-    return "gültiger Prüfkandidat, aber nicht bewiesen optimal"
+    return "gültige Lösung, aber nicht bewiesen optimal"
 
 
 def candidate_tradeoff_text(summary: CandidateSummary, all_summaries: list[CandidateSummary]) -> str:

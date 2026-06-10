@@ -1,51 +1,93 @@
 {
   "5a": {
-    "label": "5a S/Reg + F/L",
-    "music_allowed": ["Reg", "S"],
-    "languages_allowed": ["F", "L"],
-    "size_min": 30,
-    "size_max": 30
+    "label": "5a",
+    "music_allowed": [],
+    "languages_allowed": [],
+    "size_min": 28,
+    "size_max": 32,
+    "size_policy": {
+      "target_size": 30,
+      "comfort_tolerance": 1,
+      "hard_tolerance": 2,
+      "soft_weight": 2000
+    }
   },
   "5b": {
-    "label": "5b S/Reg + F",
-    "music_allowed": ["Reg", "S"],
-    "languages_allowed": ["F"],
-    "size_min": 30,
-    "size_max": 30
+    "label": "5b",
+    "music_allowed": [],
+    "languages_allowed": [],
+    "size_min": 28,
+    "size_max": 32,
+    "size_policy": {
+      "target_size": 30,
+      "comfort_tolerance": 1,
+      "hard_tolerance": 2,
+      "soft_weight": 2000
+    }
   },
   "5c": {
-    "label": "5c B/Reg + F/L",
-    "music_allowed": ["Reg", "B"],
-    "languages_allowed": ["F", "L"],
-    "size_min": 30,
-    "size_max": 30
+    "label": "5c",
+    "music_allowed": [],
+    "languages_allowed": [],
+    "size_min": 28,
+    "size_max": 32,
+    "size_policy": {
+      "target_size": 30,
+      "comfort_tolerance": 1,
+      "hard_tolerance": 2,
+      "soft_weight": 2000
+    }
   },
   "5d": {
-    "label": "5d B/Reg + F",
-    "music_allowed": ["Reg", "B"],
-    "languages_allowed": ["F"],
-    "size_min": 30,
-    "size_max": 30
+    "label": "5d",
+    "music_allowed": [],
+    "languages_allowed": [],
+    "size_min": 28,
+    "size_max": 32,
+    "size_policy": {
+      "target_size": 30,
+      "comfort_tolerance": 1,
+      "hard_tolerance": 2,
+      "soft_weight": 2000
+    }
   },
   "5e": {
-    "label": "5e G/Reg + F/L",
-    "music_allowed": ["Reg", "G"],
-    "languages_allowed": ["F", "L"],
-    "size_min": 30,
-    "size_max": 30
+    "label": "5e",
+    "music_allowed": [],
+    "languages_allowed": [],
+    "size_min": 28,
+    "size_max": 32,
+    "size_policy": {
+      "target_size": 30,
+      "comfort_tolerance": 1,
+      "hard_tolerance": 2,
+      "soft_weight": 2000
+    }
   },
   "5f": {
-    "label": "5f G/Reg + F",
-    "music_allowed": ["Reg", "G"],
-    "languages_allowed": ["F"],
-    "size_min": 30,
-    "size_max": 30
+    "label": "5f",
+    "music_allowed": [],
+    "languages_allowed": [],
+    "size_min": 28,
+    "size_max": 32,
+    "size_policy": {
+      "target_size": 30,
+      "comfort_tolerance": 1,
+      "hard_tolerance": 2,
+      "soft_weight": 2000
+    }
   },
   "5g": {
-    "label": "5g G/Reg + F",
-    "music_allowed": ["Reg", "G"],
-    "languages_allowed": ["F"],
-    "size_min": 29,
-    "size_max": 30
+    "label": "5g",
+    "music_allowed": [],
+    "languages_allowed": [],
+    "size_min": 28,
+    "size_max": 32,
+    "size_policy": {
+      "target_size": 30,
+      "comfort_tolerance": 1,
+      "hard_tolerance": 2,
+      "soft_weight": 2000
+    }
   }
 }

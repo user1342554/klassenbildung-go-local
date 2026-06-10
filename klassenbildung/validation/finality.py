@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 from typing import Literal
 
-from klassenbildung.core.models import ScoreReport, Student, ValidationMessage, student_has_manual_note
+from klassenbildung.core.constants import DEFAULT_DISTRIBUTION_LIMITS
+from klassenbildung.core.models import (
+    OptimizationSettings,
+    ScoreReport,
+    Student,
+    ValidationMessage,
+    student_has_manual_note,
+)
 
 
 FinalityLevel = Literal["BLOCKER", "WARNING", "INFO"]
 
-MAX_PRIMARY_SCHOOL_PER_CLASS = 10
-MAX_PRIMARY_SCHOOL_CLASS_PER_CLASS = 6
-GENDER_TARGET_MIN = 12
-GENDER_TARGET_MAX = 18
-GENDER_TARGET_MIN_CLASS_SIZE = 24
-MAX_SUPPORT_PER_CLASS = 4
+MAX_PRIMARY_SCHOOL_PER_CLASS = DEFAULT_DISTRIBUTION_LIMITS["max_primary_school_per_class"]
+MAX_PRIMARY_SCHOOL_CLASS_PER_CLASS = DEFAULT_DISTRIBUTION_LIMITS["max_primary_school_class_per_class"]
+GENDER_TARGET_MIN = DEFAULT_DISTRIBUTION_LIMITS["gender_target_min"]
+GENDER_TARGET_MAX = DEFAULT_DISTRIBUTION_LIMITS["gender_target_max"]
+GENDER_TARGET_MIN_CLASS_SIZE = DEFAULT_DISTRIBUTION_LIMITS["gender_target_min_class_size"]
+MAX_SUPPORT_PER_CLASS = DEFAULT_DISTRIBUTION_LIMITS["max_support_per_class"]
 WITHOUT_WISHFRIEND_WARNING = 45
 
 DATA_BLOCKER_MESSAGES = {
@@ -25,6 +33,9 @@ DATA_BLOCKER_MESSAGES = {
     "Musikklasse ist leer oder unbekannt.",
     "Freundeswunsch 1 ist nicht zuordenbar.",
     "Freundeswunsch 2 ist nicht zuordenbar.",
+    "Freundeswunsch 1 ist mehrdeutig.",
+    "Freundeswunsch 2 ist mehrdeutig.",
+    "Wert enthält führende oder abschließende Leerzeichen.",
 }
 
 
@@ -40,10 +51,12 @@ class FinalityFinding:
 class FinalityReport:
     data_blockers: list[ValidationMessage] = field(default_factory=list)
     unreviewed_notes: int = 0
+    unresolved_notes: int = 0
     profile_violations: int = 0
     manual_rule_violations: int = 0
     hard_violations: int = 0
     findings: list[FinalityFinding] = field(default_factory=list)
+    accepted_warning_ids: set[str] = field(default_factory=set)
 
     @property
     def class_blockers(self) -> list[FinalityFinding]:
@@ -52,6 +65,14 @@ class FinalityReport:
     @property
     def warnings(self) -> list[FinalityFinding]:
         return [finding for finding in self.findings if finding.level == "WARNING"]
+
+    @property
+    def undecided_warnings(self) -> list[FinalityFinding]:
+        return [
+            finding
+            for finding in self.warnings
+            if finding_id(finding) not in self.accepted_warning_ids
+        ]
 
     @property
     def other_hard_violations(self) -> int:
@@ -63,10 +84,6 @@ class FinalityReport:
 
     def blocker_labels(self) -> list[str]:
         labels = []
-        if self.data_blockers:
-            labels.append(f"{len(self.data_blockers)} Datenblocker")
-        if self.unreviewed_notes:
-            labels.append(f"{self.unreviewed_notes} ungeprüfte Notizen")
         if self.profile_violations:
             labels.append(f"{self.profile_violations} Profilverletzungen")
         if self.manual_rule_violations:
@@ -92,15 +109,20 @@ def finality_report(
     *,
     profile_violations: int = 0,
     manual_rule_violations: int = 0,
+    settings: OptimizationSettings | None = None,
+    accepted_warning_ids: set[str] | None = None,
 ) -> FinalityReport:
     hard_violations = len(score_report.hard_violations) if score_report else 0
+    note_statuses = note_review_status_by_student or {}
     return FinalityReport(
         data_blockers=finality_data_blockers(validation_messages or []),
-        unreviewed_notes=unreviewed_note_count(students, note_review_status_by_student or {}),
+        unreviewed_notes=unreviewed_note_count(students, note_statuses),
+        unresolved_notes=unresolved_note_count(students, note_statuses),
         profile_violations=profile_violations,
         manual_rule_violations=manual_rule_violations,
         hard_violations=hard_violations,
-        findings=class_finality_findings(score_report),
+        findings=class_finality_findings(score_report, settings),
+        accepted_warning_ids=set(accepted_warning_ids or set()),
     )
 
 
@@ -121,39 +143,57 @@ def unreviewed_note_count(students: list[Student], note_review_status_by_student
     )
 
 
-def class_finality_findings(score_report: ScoreReport | None) -> list[FinalityFinding]:
+def unresolved_note_count(students: list[Student], note_review_status_by_student: dict[str, object]) -> int:
+    return sum(
+        1
+        for student in students
+        if student_has_manual_note(student)
+        and _status_value(note_review_status_by_student.get(student.internal_id, "unreviewed")) == "unresolved_blocker"
+    )
+
+
+def finding_id(finding: FinalityFinding) -> str:
+    raw = f"{finding.level}|{finding.category}|{finding.class_id or ''}|{finding.message}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def class_finality_findings(
+    score_report: ScoreReport | None,
+    settings: OptimizationSettings | None = None,
+) -> list[FinalityFinding]:
     if not score_report:
         return []
+    limits = _distribution_limits(settings)
     findings: list[FinalityFinding] = []
     for report in score_report.class_reports:
         school_name, school_count = _largest_item(report.school_counts)
-        if school_count > MAX_PRIMARY_SCHOOL_PER_CLASS:
+        if school_count > limits["max_primary_school_per_class"]:
             findings.append(
                 FinalityFinding(
                     "BLOCKER",
                     "Grundschul-Ballungsblocker",
-                    f"{report.class_id}: {school_count} Kinder aus {school_name}; erlaubt sind höchstens {MAX_PRIMARY_SCHOOL_PER_CLASS}.",
+                    f"{report.class_id}: {school_count} Kinder aus {school_name}; erlaubt sind höchstens {limits['max_primary_school_per_class']}.",
                     report.class_id,
                 )
             )
 
         primary_name, primary_count = _largest_item(report.primary_class_counts)
-        if primary_count > MAX_PRIMARY_SCHOOL_CLASS_PER_CLASS:
+        if primary_count > limits["max_primary_school_class_per_class"]:
             findings.append(
                 FinalityFinding(
                     "BLOCKER",
                     "Grundschulklassen-Ballungsblocker",
-                    f"{report.class_id}: {primary_count} Kinder aus {primary_name}; erlaubt sind höchstens {MAX_PRIMARY_SCHOOL_CLASS_PER_CLASS}.",
+                    f"{report.class_id}: {primary_count} Kinder aus {primary_name}; erlaubt sind höchstens {limits['max_primary_school_class_per_class']}.",
                     report.class_id,
                 )
             )
 
-        if report.support_count > MAX_SUPPORT_PER_CLASS:
+        if report.support_count > limits["max_support_per_class"]:
             findings.append(
                 FinalityFinding(
                     "BLOCKER",
                     "R-Obergrenzenblocker",
-                    f"{report.class_id}: {report.support_count} R-/Unterstützungsmarkierungen; erlaubt sind höchstens {MAX_SUPPORT_PER_CLASS}.",
+                    f"{report.class_id}: {report.support_count} R-/Unterstützungsmarkierungen; erlaubt sind höchstens {limits['max_support_per_class']}.",
                     report.class_id,
                 )
             )
@@ -167,14 +207,14 @@ def class_finality_findings(score_report: ScoreReport | None) -> list[FinalityFi
                 )
             )
 
-        if report.size >= GENDER_TARGET_MIN_CLASS_SIZE:
+        if report.size >= limits["gender_target_min_class_size"]:
             for label, count in (("m", report.gender_counts.get("m", 0)), ("w", report.gender_counts.get("w", 0))):
-                if count < GENDER_TARGET_MIN or count > GENDER_TARGET_MAX:
+                if count < limits["gender_target_min"] or count > limits["gender_target_max"]:
                     findings.append(
                         FinalityFinding(
                             "WARNING",
                             "Geschlechter-Zielzonenwarnung",
-                            f"{report.class_id}: {label}={count}, Zielzone {GENDER_TARGET_MIN}-{GENDER_TARGET_MAX}.",
+                            f"{report.class_id}: {label}={count}, Zielzone {limits['gender_target_min']}-{limits['gender_target_max']}; pädagogische Begründung erforderlich.",
                             report.class_id,
                         )
                     )
@@ -189,21 +229,35 @@ def class_finality_findings(score_report: ScoreReport | None) -> list[FinalityFi
     return findings
 
 
-def gender_target_zone_text() -> str:
-    return f"{GENDER_TARGET_MIN}-{GENDER_TARGET_MAX}"
+def gender_target_zone_text(settings: OptimizationSettings | None = None) -> str:
+    limits = _distribution_limits(settings)
+    return f"{limits['gender_target_min']}-{limits['gender_target_max']}"
 
 
-def gender_target_status(size: int, male_count: int, female_count: int) -> str:
-    if size < GENDER_TARGET_MIN_CLASS_SIZE:
+def gender_target_status(
+    size: int,
+    male_count: int,
+    female_count: int,
+    settings: OptimizationSettings | None = None,
+) -> str:
+    limits = _distribution_limits(settings)
+    if size < limits["gender_target_min_class_size"]:
         return "nicht bewertet bei kleinen Klassen"
     issues = []
-    if male_count < GENDER_TARGET_MIN or male_count > GENDER_TARGET_MAX:
+    if male_count < limits["gender_target_min"] or male_count > limits["gender_target_max"]:
         issues.append(f"m={male_count}")
-    if female_count < GENDER_TARGET_MIN or female_count > GENDER_TARGET_MAX:
+    if female_count < limits["gender_target_min"] or female_count > limits["gender_target_max"]:
         issues.append(f"w={female_count}")
     if not issues:
         return "im Zielbereich"
-    return "außerhalb Zielzone: " + ", ".join(issues)
+    return "außerhalb Zielzone, Begründung erforderlich: " + ", ".join(issues)
+
+
+def _distribution_limits(settings: OptimizationSettings | None) -> dict[str, int]:
+    return {
+        key: int(getattr(settings, key, default)) if settings is not None else default
+        for key, default in DEFAULT_DISTRIBUTION_LIMITS.items()
+    }
 
 
 def _largest_item(counts: dict[str, int]) -> tuple[str, int]:

@@ -28,6 +28,9 @@ from klassenbildung.core.models import (
     ValidationMessage,
 )
 from klassenbildung.core.settings import (
+    DEFAULT_CLASS_SIZE_COMFORT_TOLERANCE,
+    DEFAULT_CLASS_SIZE_HARD_TOLERANCE,
+    DEFAULT_CLASS_SIZE_SOFT_WEIGHT,
     coerce_settings,
     generate_class_configs,
     load_class_configs,
@@ -45,15 +48,16 @@ from klassenbildung.presentation.wording import (
     candidate_warning_lines as summary_warning_lines,
 )
 from klassenbildung.services.candidate_selection import (
-    balanced_candidate as summary_balanced_candidate,
     candidate_summaries,
     decision_candidate_cards as summary_decision_candidate_cards,
     diagnostic_candidate as summary_diagnostic_candidate,
     review_candidates as summary_review_candidates,
-    social_strongest_candidate as summary_social_strongest_candidate,
+)
+from klassenbildung.services.note_suggestion_evaluation import (
+    evaluate_note_suggestions,
+    note_suggestion_summary_text,
 )
 from klassenbildung.ui.tables import (
-    class_configs_to_frame,
     comments_to_frame,
     messages_to_frame,
     score_to_class_frame,
@@ -73,10 +77,16 @@ def _reload_stale_project_modules() -> None:
     global manual_rules_module
     global note_rule_conversion_module
 
-    stale_core = "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
+    stale_core = (
+        "comfort_tolerance" not in inspect.signature(generate_class_configs).parameters
+        or "max_primary_school_per_class" not in getattr(OptimizationSettings, "__dataclass_fields__", {})
+    )
     stale_summary = not hasattr(candidate_summary_module, "candidate_summary_records")
     stale_progress = not hasattr(optimization_progress_module, "progress_event_message")
-    stale_manual_rules = not hasattr(manual_rules_module, "student_effective_note_text")
+    stale_manual_rules = (
+        not hasattr(manual_rules_module, "student_effective_note_text")
+        or not hasattr(manual_rules_module.NoteReviewStatus, "UNRESOLVED_BLOCKER")
+    )
     stale_note_rules = not hasattr(note_rule_conversion_module, "suggest_note_rule_actions")
     stale_review = (
         not hasattr(candidate_review_module, "build_candidate_review_model")
@@ -99,6 +109,7 @@ def _reload_stale_project_modules() -> None:
         or "selected_candidate_key" not in inspect.signature(excel_export_module._write_overview_sheet).parameters
         or "decision_context" not in inspect.signature(excel_export_module._write_overview_sheet).parameters
         or "class_configs" not in inspect.signature(excel_export_module._write_notes_sheet).parameters
+        or "warning_decision_status_by_id" not in inspect.signature(export_excel).parameters
     )
     if (
         not stale_core
@@ -166,9 +177,6 @@ _reload_stale_project_modules()
 st.set_page_config(page_title="Klassenbildung", layout="wide")
 
 DUMMY_EXCEL_PATH = Path("DummyDaten.xlsx")
-COMMENT_REVIEW_MESSAGE = "Bemerkung muss manuell geprüft werden."
-
-
 @dataclass(frozen=True)
 class ExportCandidateOption:
     option_id: str
@@ -178,6 +186,9 @@ class ExportCandidateOption:
     caption: str
     assignments: dict[str, str]
     score_report: object
+    note_evaluation: object | None = None
+    gender_balance_penalty: int = 0
+    changes_against_current: int = 0
 
 WEIGHT_HELP = {
     "weight_mutual_friend": (
@@ -292,8 +303,6 @@ def main() -> None:
     st.title("Klassenbildung")
 
     _init_state()
-    st.sidebar.toggle("Expertenmodus", value=st.session_state.get("expert_mode", False), key="expert_mode")
-    st.sidebar.caption("Im Standardmodus stehen Entscheidung, Kandidaten und manuelle Prüfung im Vordergrund.")
     settings = _current_settings()
 
     tabs = st.tabs(
@@ -316,6 +325,7 @@ def main() -> None:
 
 
 def _init_state() -> None:
+    st.session_state.pop("expert_mode", None)
     st.session_state.setdefault("settings", load_settings())
     st.session_state.settings = coerce_settings(st.session_state.settings)
     st.session_state.setdefault("class_configs", load_class_configs())
@@ -347,6 +357,8 @@ def _clear_manual_rule_state() -> None:
     st.session_state.manual_rules = []
     st.session_state.manual_rule_entries = []
     st.session_state.note_hints_kept = set()
+    st.session_state.note_unresolved_blockers = set()
+    st.session_state.release_warning_decisions = {}
 
 
 def _manual_rules() -> list[ManualRule]:
@@ -369,6 +381,7 @@ def _note_review_status_by_student():
     return manual_rules_module.note_review_status_by_student(
         _manual_rule_entries(),
         set(st.session_state.get("note_hints_kept", set())),
+        set(st.session_state.get("note_unresolved_blockers", set())),
     )
 
 
@@ -440,8 +453,8 @@ def _settings_tab() -> None:
     st.subheader("Klassenrahmen und Rechenzeit")
     total_students = len(result.students) if result else 210
     class_configs: list[ClassConfig] = st.session_state.class_configs
-    average_size = max(1, round(total_students / max(len(class_configs) or 7, 1)))
-    col1, col2, col3, col4 = st.columns(4)
+    target_default, tolerance_default = _class_size_control_defaults(total_students, class_configs)
+    col1, col2, col3 = st.columns(3)
     class_count = col1.number_input(
         "Anzahl Klassen",
         min_value=1,
@@ -453,23 +466,16 @@ def _settings_tab() -> None:
         "Wunschgröße",
         min_value=1,
         max_value=40,
-        value=average_size,
+        value=target_default,
         key="settings_target_size",
     )
-    soft_tolerance = col3.number_input(
-        "normaler Spielraum",
+    size_tolerance = col3.number_input(
+        "Spielraum (+/-)",
         min_value=0,
-        max_value=10,
-        value=2,
-        key="settings_soft_tolerance",
-    )
-    hard_tolerance = col4.number_input(
-        "äußerste Grenze",
-        min_value=int(soft_tolerance),
         max_value=15,
-        value=max(5, int(soft_tolerance)),
-        key="settings_hard_tolerance",
-        help="Aus Wunschgröße und äußerer Grenze werden die harten Klassengrößen berechnet.",
+        value=tolerance_default,
+        key="settings_size_tolerance",
+        help="Erlaubte Abweichung von der Wunschgröße, zum Beispiel 30 +/- 2.",
     )
     time_limit = st.select_slider(
         "Max. Rechenzeit pro Prüfschritt",
@@ -477,14 +483,16 @@ def _settings_tab() -> None:
         value=current.solver_time_limit_seconds,
         key="settings_time_limit",
     )
-    soft_min = max(0, int(target_size) - int(soft_tolerance))
-    soft_max = int(target_size) + int(soft_tolerance)
-    hard_min = max(0, int(target_size) - int(hard_tolerance))
-    hard_max = int(target_size) + int(hard_tolerance)
+    size_min = max(0, int(target_size) - int(size_tolerance))
+    size_max = int(target_size) + int(size_tolerance)
     st.caption(
-        f"Ziel: {int(target_size)} Kinder pro Klasse. Normaler Bereich: {soft_min}-{soft_max}. "
-        f"Harte Grenze: {hard_min}-{hard_max}."
+        f"Ziel: {int(target_size)} Kinder pro Klasse. Erlaubter Bereich: {size_min}-{size_max}."
     )
+    comfort_tolerance = _comfort_tolerance_for_hard_tolerance(int(size_tolerance))
+    if comfort_tolerance < int(size_tolerance):
+        comfort_min = max(0, int(target_size) - comfort_tolerance)
+        comfort_max = int(target_size) + comfort_tolerance
+        st.caption(f"Bevorzugter Zielbereich ohne Zusatzstrafe: {comfort_min}-{comfort_max}.")
     st.caption(
         "Die Rechenzeit gilt pro Prüfschritt. Die App prüft nacheinander F/L, Musik, Kinder ohne Wunschfreund, "
         "starke Freundschaften, kleinere Profilgruppen und danach die Restqualität."
@@ -495,31 +503,14 @@ def _settings_tab() -> None:
         class_count=int(class_count),
         year=5,
         target_size=int(target_size),
-        comfort_tolerance=int(soft_tolerance),
-        hard_tolerance=int(hard_tolerance),
+        comfort_tolerance=comfort_tolerance,
+        hard_tolerance=int(size_tolerance),
+        class_size_soft_weight=DEFAULT_CLASS_SIZE_SOFT_WEIGHT,
         existing_profiles=class_configs,
     )
     preview_configs = _without_generated_labels(preview_configs)
+    st.session_state.class_configs = preview_configs
     st.dataframe(_class_size_preview_frame(preview_configs), width="stretch", hide_index=True)
-
-    st.subheader("Feste Klassenprofile")
-    st.caption(
-        "Wenn Klassen wie 5a S+F/L oder 5e G/Reg+F/L administrativ fest vorgegeben sind, "
-        "müssen diese Profile hier als harte Regeln aktiv sein. Reg ist nur dort erlaubt, wo es im Musikprofil der Klasse steht."
-    )
-    profile_col_a, profile_col_b = st.columns(2)
-    enforce_language_profile = profile_col_a.checkbox(
-        "Sprachprofile der Klassen erzwingen",
-        value=current.enforce_language_profile,
-        key="settings_enforce_language_profile",
-    )
-    enforce_music_profile = profile_col_b.checkbox(
-        "Musikprofile der Klassen erzwingen",
-        value=current.enforce_music_profile,
-        key="settings_enforce_music_profile",
-    )
-    preview_configs = _class_profile_controls(preview_configs)
-    st.dataframe(class_configs_to_frame(preview_configs), width="stretch", hide_index=True)
 
     st.subheader("Gewichtungen")
     st.info(
@@ -612,8 +603,8 @@ def _settings_tab() -> None:
         advanced = _advanced_weight_controls(current)
 
     settings = OptimizationSettings(
-        enforce_music_profile=enforce_music_profile,
-        enforce_language_profile=enforce_language_profile,
+        enforce_music_profile=False,
+        enforce_language_profile=False,
         weight_music_profile=0,
         weight_language_profile=0,
         weight_mixed_language_class=weight_mixed_language_class,
@@ -648,6 +639,7 @@ def _advanced_weight_values(current: OptimizationSettings) -> dict[str, int]:
         "weight_nationality": 0,
         "weight_religion": 0,
         "weight_keep_existing": 0,
+        **_distribution_limit_values(current),
     }
 
 
@@ -656,7 +648,7 @@ def _advanced_weight_controls(current: OptimizationSettings) -> dict[str, int]:
         "R, Geschlecht und Grundschule werden toleranz- bzw. schwellenbasiert bewertet. "
         "Staat/Nationalität, Religion und bestehende Einteilung sind als aktive Kriterien deaktiviert."
     )
-    return {
+    values = {
         "weight_support_distribution": _weight_slider(
             "R-Verteilung",
             "weight_support_distribution",
@@ -689,6 +681,99 @@ def _advanced_weight_controls(current: OptimizationSettings) -> dict[str, int]:
         "weight_religion": 0,
         "weight_keep_existing": 0,
     }
+    st.markdown("**Harte Freigabegrenzen**")
+    values.update(_distribution_limit_controls(current))
+    return values
+
+
+def _distribution_limit_values(current: OptimizationSettings) -> dict[str, int]:
+    return {
+        "max_primary_school_per_class": current.max_primary_school_per_class,
+        "max_primary_school_class_per_class": current.max_primary_school_class_per_class,
+        "max_support_per_class": current.max_support_per_class,
+        "gender_target_min": current.gender_target_min,
+        "gender_target_max": current.gender_target_max,
+        "gender_target_min_class_size": current.gender_target_min_class_size,
+    }
+
+
+def _distribution_limit_controls(current: OptimizationSettings) -> dict[str, int]:
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        max_primary_school = _limit_number_input(
+            "Grundschule je Klasse",
+            "max_primary_school_per_class",
+            current.max_primary_school_per_class,
+            help_text="Harte Obergrenze für Kinder derselben Grundschule in einer neuen Klasse.",
+        )
+        gender_min = _limit_number_input(
+            "Geschlecht min.",
+            "gender_target_min",
+            current.gender_target_min,
+            min_value=0,
+            max_value=30,
+            help_text="Untere Zielzone für m/w in normal großen Klassen.",
+        )
+    with col_b:
+        max_primary_class = _limit_number_input(
+            "Grundschule + alte Klasse",
+            "max_primary_school_class_per_class",
+            current.max_primary_school_class_per_class,
+            help_text="Harte Obergrenze für dieselbe Grundschule plus alte Klasse.",
+        )
+        gender_max = _limit_number_input(
+            "Geschlecht max.",
+            "gender_target_max",
+            current.gender_target_max,
+            min_value=gender_min,
+            max_value=30,
+            help_text="Obere Zielzone für m/w in normal großen Klassen.",
+        )
+    with col_c:
+        max_support = _limit_number_input(
+            "R je Klasse",
+            "max_support_per_class",
+            current.max_support_per_class,
+            help_text="Harte Obergrenze für R-/Unterstützungsmarkierungen je Klasse.",
+        )
+        gender_min_size = _limit_number_input(
+            "Geschlecht ab Klassengröße",
+            "gender_target_min_class_size",
+            current.gender_target_min_class_size,
+            min_value=1,
+            max_value=40,
+            help_text="Ab dieser Klassengröße wird die m/w-Zielzone bewertet.",
+        )
+    return {
+        "max_primary_school_per_class": max_primary_school,
+        "max_primary_school_class_per_class": max_primary_class,
+        "max_support_per_class": max_support,
+        "gender_target_min": gender_min,
+        "gender_target_max": gender_max,
+        "gender_target_min_class_size": gender_min_size,
+    }
+
+
+def _limit_number_input(
+    label: str,
+    key: str,
+    value: int,
+    *,
+    min_value: int = 0,
+    max_value: int = 100,
+    help_text: str,
+) -> int:
+    return int(
+        st.number_input(
+            label,
+            min_value=min_value,
+            max_value=max_value,
+            value=min(max(value, min_value), max_value),
+            step=1,
+            key=key,
+            help=help_text,
+        )
+    )
 
 
 def _weight_slider(
@@ -713,55 +798,48 @@ def _without_generated_labels(class_configs: list[ClassConfig]) -> list[ClassCon
     return class_configs
 
 
+def _class_size_control_defaults(total_students: int, class_configs: list[ClassConfig]) -> tuple[int, int]:
+    class_count = max(len(class_configs) or 7, 1)
+    average_size = max(1, round(total_students / class_count))
+    policies = [getattr(config, "size_policy", None) for config in class_configs]
+    first_policy = next((policy for policy in policies if policy), None)
+    if first_policy and all(not policy or policy == first_policy for policy in policies):
+        return int(first_policy.target_size), int(first_policy.hard_tolerance)
+    if class_configs:
+        min_size = min(config.size_min for config in class_configs)
+        max_size = max(config.size_max for config in class_configs)
+        midpoint = max(1, round((min_size + max_size) / 2))
+        tolerance = max(midpoint - min_size, max_size - midpoint)
+        if tolerance > 0:
+            return midpoint, int(tolerance)
+    return average_size, DEFAULT_CLASS_SIZE_HARD_TOLERANCE
+
+
+def _comfort_tolerance_for_hard_tolerance(hard_tolerance: int) -> int:
+    if hard_tolerance <= 0:
+        return 0
+    return min(DEFAULT_CLASS_SIZE_COMFORT_TOLERANCE, hard_tolerance)
+
+
 def _class_size_preview_frame(class_configs: list[ClassConfig]) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
                 "Klasse": config.class_id,
                 "Wunschgröße": int(st.session_state.get("settings_target_size", config.size_max)),
-                "normal": (
-                    f"{max(0, int(st.session_state.get('settings_target_size', config.size_max)) - int(st.session_state.get('settings_soft_tolerance', 0)))}-"
-                    f"{int(st.session_state.get('settings_target_size', config.size_max)) + int(st.session_state.get('settings_soft_tolerance', 0))}"
-                ),
-                "hart": f"{config.size_min}-{config.size_max}",
+                "Zielbereich": _class_size_comfort_label(config),
+                "Spielraum": f"{config.size_min}-{config.size_max}",
             }
             for config in class_configs
         ]
     )
 
 
-def _class_profile_controls(class_configs: list[ClassConfig]) -> list[ClassConfig]:
-    edited_configs: list[ClassConfig] = []
-    with st.expander("Profile je Klasse bearbeiten", expanded=False):
-        st.caption("Leere Auswahl bedeutet hier nicht 'alle', sondern: kein festes Profil für diese Klasse hinterlegt.")
-        for config in class_configs:
-            col_a, col_b = st.columns([1, 1])
-            music = col_a.multiselect(
-                f"{config.class_id} Musik",
-                options=["Reg", "B", "S", "G"],
-                default=config.music_allowed,
-                key=f"profile_music_{config.class_id}",
-            )
-            languages = col_b.multiselect(
-                f"{config.class_id} Sprache",
-                options=["F", "L"],
-                default=config.languages_allowed,
-                key=f"profile_language_{config.class_id}",
-            )
-            edited_configs.append(
-                ClassConfig(
-                    class_id=config.class_id,
-                    label=config.label,
-                    size_min=config.size_min,
-                    size_max=config.size_max,
-                    music_allowed=list(music),
-                    languages_allowed=list(languages),
-                    size_policy=getattr(config, "size_policy", None),
-                )
-            )
-    if edited_configs:
-        return edited_configs
-    return class_configs
+def _class_size_comfort_label(config: ClassConfig) -> str:
+    policy = getattr(config, "size_policy", None)
+    if not policy:
+        return "-"
+    return f"{policy.comfort_min}-{policy.comfort_max}"
 
 
 def _friend_wish_frame(friend_stats: dict[str, int]) -> pd.DataFrame:
@@ -837,18 +915,10 @@ def _upload_tab(settings: OptimizationSettings) -> None:
         st.dataframe(messages_to_frame(validation_result.errors), width="stretch", hide_index=True)
     else:
         st.success("Datei ist für eine Vorschlagsrechnung nutzbar.")
-        data_blockers = finality_module.finality_data_blockers(validation_result.messages)
-        if data_blockers:
-            st.error(
-                f"Finalexport gesperrt: {len(data_blockers)} Datenblocker. "
-                "Schülernummern, Profile und nicht zuordenbare Freundeswünsche müssen vor einer Freigabe geklärt werden."
-            )
-            st.dataframe(messages_to_frame(data_blockers), width="stretch", hide_index=True)
         visible_warnings = _visible_validation_warnings(validation_result.warnings)
         if visible_warnings:
-            st.warning(f"{len(visible_warnings)} Dinge bitte in der Excel-Datei prüfen.")
-            st.dataframe(messages_to_frame(visible_warnings), width="stretch", hide_index=True)
-    _render_import_note_review_panel(result.students, st.session_state.class_configs, settings)
+            with st.expander(f"{len(visible_warnings)} nicht kritische Warnungen anzeigen", expanded=False):
+                st.dataframe(messages_to_frame(visible_warnings), width="stretch", hide_index=True)
     _render_manual_rules_panel(result.students, st.session_state.class_configs, settings, "upload")
 
 
@@ -868,6 +938,8 @@ def _validation_tab(settings: OptimizationSettings) -> None:
     st.dataframe(messages_to_frame(validation_result.messages), width="stretch")
     if validation_result.has_errors:
         st.error("Fehler blockieren die Optimierung.")
+    elif finality_module.finality_data_blockers(validation_result.messages):
+        st.warning("Datenprobleme gefunden. Sie werden dokumentiert, blockieren die Berechnung aber nicht.")
     else:
         st.success("Keine blockierenden Fehler gefunden.")
 
@@ -882,23 +954,6 @@ def _comments_tab() -> None:
         st.success("Keine Bemerkungen gefunden.")
     else:
         st.dataframe(frame, width="stretch")
-
-
-def _render_import_note_review_panel(
-    students: list[Student],
-    class_configs: list[ClassConfig],
-    settings: OptimizationSettings,
-) -> None:
-    note_rows = _manual_note_rows(students, assignments={})
-    if not note_rows:
-        return
-    st.markdown("**Bemerkungen als Regeln prüfen**")
-    st.caption(
-        "Eindeutige Hinweise wie 'nur 5e möglich' oder 'nicht mit 23' werden vorgeschlagen. "
-        "Unklare Hinweise müssen bewusst ausgewählt oder als Hinweis behalten werden."
-    )
-    _render_note_status_frame("Bemerkungen", note_rows)
-    _render_note_rule_controls(note_rows, students, class_configs, settings, "upload_notes")
 
 
 def _manual_note_rows(students: list[Student], assignments: dict[str, str]) -> list:
@@ -1036,50 +1091,6 @@ def _manual_rule_option_label(entry, students: list[Student]) -> str:
     return f"{record['Typ']}: {record['Schüler']} -> {record['Ziel / Partner']} ({record['Status']})"
 
 
-def _class_config_tab() -> None:
-    class_configs: list[ClassConfig] = st.session_state.class_configs
-
-    st.subheader("Klassenprofile")
-    st.dataframe(class_configs_to_frame(st.session_state.class_configs), width="stretch")
-
-    with st.expander("Profile bearbeiten", expanded=False):
-        edited_configs: list[ClassConfig] = []
-        for config in class_configs:
-            with st.expander(config.class_id, expanded=False):
-                music = st.multiselect(
-                    "Musikangebot",
-                    options=["Reg", "B", "S", "G"],
-                    default=config.music_allowed,
-                    key=f"music_{config.class_id}",
-                    help="Organisatorische Notiz für diese Klasse. Das Standardmodell trennt Musik über die Gewichtungen, nicht über harte Profilverbote.",
-                )
-                languages = st.multiselect(
-                    "Sprachangebot",
-                    options=["F", "L"],
-                    default=config.languages_allowed,
-                    key=f"lang_{config.class_id}",
-                    help="Organisatorische Notiz für diese Klasse. Das Standardmodell trennt F/L über die Gewichtungen, nicht über harte Profilverbote.",
-                )
-                size_min = st.number_input("min", min_value=0, max_value=40, value=config.size_min, key=f"min_{config.class_id}")
-                size_max = st.number_input("max", min_value=0, max_value=40, value=config.size_max, key=f"max_{config.class_id}")
-                edited_configs.append(
-                    ClassConfig(
-                        class_id=config.class_id,
-                        label=config.class_id,
-                        size_min=int(size_min),
-                        size_max=int(size_max),
-                        music_allowed=list(music),
-                        languages_allowed=list(languages),
-                    )
-                )
-
-        if st.button("Klassen speichern", key="details_save_classes"):
-            save_class_configs(edited_configs)
-            st.session_state.class_configs = edited_configs
-            st.session_state.solver_result = None
-            st.success("Klassen gespeichert.")
-
-
 def _optimization_tab(settings: OptimizationSettings) -> None:
     result = st.session_state.import_result
     if not result:
@@ -1119,49 +1130,33 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
         st.session_state.solver_result = solver_result
         elapsed = perf_counter() - started_at
         progress_bar.progress(1.0)
+        result_summary = optimization_progress_module.calculation_result_summary(solver_result, len(result.students))
         current_step_box.success(
-            f"Berechnung abgeschlossen nach {elapsed:.1f} Sekunden. "
-            + optimization_progress_module.calculation_result_summary(solver_result, len(result.students))
+            f"Berechnung abgeschlossen nach {elapsed:.1f} Sekunden. {result_summary}"
         )
         if solver_result.status in {"OPTIMAL", "FEASIBLE"}:
             verdict = _quality_verdict(solver_result, len(result.students))
             if verdict["severity"] == "error":
                 status_box.error(f"Gültige Lösung nach {elapsed:.1f} Sekunden, aber nicht freigabefähig.")
             elif verdict["severity"] == "warning":
-                if _review_candidates(solver_result):
-                    status_box.warning(
-                        "Gültige Lösung gefunden: strenge Profilvariante nicht freigabefähig; "
-                        f"Prüfkandidaten mit Profil-Lockerung gefunden nach {elapsed:.1f} Sekunden."
-                    )
-                else:
-                    status_box.warning(f"Gültige Lösung nach {elapsed:.1f} Sekunden, aber nur mit Prüfung verwenden.")
+                status_box.warning(result_summary)
             else:
-                status_box.success(f"Berechnung fertig nach {elapsed:.1f} Sekunden.")
+                status_box.success(result_summary)
         else:
             status_label, status_hint = _solver_status_text(solver_result.status)
             status_box.error(f"Berechnung beendet nach {elapsed:.1f} Sekunden: {status_label}. {status_hint}")
 
     solver_result = st.session_state.solver_result
     if solver_result:
-        if solver_result.score_report:
-            status_label, status_hint = _overall_status_text(_overall_status(solver_result, len(result.students)))
-        else:
+        if not solver_result.score_report:
             status_label, status_hint = _solver_status_text(solver_result.status)
-        st.metric("Ergebnis", status_label)
-        st.caption(status_hint)
-        if solver_result.message:
-            st.info(solver_result.message)
-        _render_calculation_report(solver_result, len(result.students))
+            st.metric("Ergebnis", status_label)
+            st.caption(status_hint)
+            if solver_result.message:
+                st.info(solver_result.message)
         if solver_result.score_report:
             score = solver_result.score_report
-            _render_standard_result(
-                solver_result,
-                result.students,
-                st.session_state.class_configs,
-                settings,
-                include_review=False,
-                key_suffix="optimierung",
-            )
+            st.success(optimization_progress_module.wishfriend_result_summary(solver_result, len(result.students)))
             if score.hard_violations:
                 st.error("Das Ergebnis enthält harte Regelverletzungen und sollte so nicht exportiert werden.")
             else:
@@ -1183,18 +1178,6 @@ def _result_tab(settings: OptimizationSettings) -> None:
         st.info("Noch kein Ergebnis vorhanden.")
         return
 
-    score = solver_result.score_report
-    _render_manual_rules_panel(result.students, st.session_state.class_configs, settings, "result")
-    _render_calculation_report(solver_result, len(result.students))
-    _render_standard_result(
-        solver_result,
-        result.students,
-        st.session_state.class_configs,
-        settings,
-        include_review=True,
-        key_suffix="ergebnis",
-    )
-
     validation_result = validate_students(
         result.students,
         st.session_state.class_configs,
@@ -1213,21 +1196,8 @@ def _result_tab(settings: OptimizationSettings) -> None:
     if not export_options:
         st.error("Keine exportierbare Klassenliste vorhanden.")
         return
-    export_option = _render_export_choice(export_options)
-    export_blockers = _export_blocker_messages(
-        result.students,
-        export_option.assignments,
-        export_option.score_report,
-        validation_messages,
-        st.session_state.class_configs,
-        settings,
-    )
-    if export_blockers:
-        st.error(
-            "Finalexport gesperrt: "
-            + "; ".join(export_blockers)
-            + ". Es ist nur ein Prüfexport möglich."
-        )
+    export_option = export_options[0]
+    st.session_state.release_warning_decisions = {}
     export_bytes = export_excel(
         result.workbook_bytes,
         result.students,
@@ -1243,13 +1213,14 @@ def _result_tab(settings: OptimizationSettings) -> None:
         settings=settings,
         manual_rule_entries=_manual_rule_entries_for_export(),
         note_review_status_by_student=_note_review_status_by_student(),
+        warning_decision_status_by_id={},
         export_source_candidate_key=export_option.candidate_key,
         export_selection_mode=export_option.mode,
     )
     st.download_button(
         "Excel exportieren",
         data=export_bytes,
-        file_name="Klassenbildung_Pruefstand_nicht_final.xlsx" if export_blockers else "Klassenbildung_Ergebnis.xlsx",
+        file_name="Klassenbildung_Ergebnis.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     _render_technical_expander(
@@ -1257,8 +1228,9 @@ def _result_tab(settings: OptimizationSettings) -> None:
         result.students,
         st.session_state.class_configs,
         settings,
-        score,
+        solver_result.score_report,
         "ergebnis",
+        expanded=False,
     )
 
 
@@ -1282,6 +1254,14 @@ def _export_candidate_options(
         for summary in summaries
     ]
     current_candidate_key = _candidate_key_for_assignments(solver_result.assignments, summaries) or "X"
+    available_class_ids = [config.class_id for config in class_configs]
+    ignored_note_student_ids = _ignored_note_student_ids_for_tiebreaker()
+    strict_note_evaluation = evaluate_note_suggestions(
+        students,
+        solver_result.assignments,
+        available_class_ids=available_class_ids,
+        ignored_student_ids=ignored_note_student_ids,
+    )
 
     strict_option = ExportCandidateOption(
         option_id="current_result",
@@ -1291,83 +1271,67 @@ def _export_candidate_options(
         caption=_export_option_caption(
             "Aktuelle Ergebnisliste ohne harte Regelverletzungen. Nicht automatisch die score-beste Lösung.",
             solver_result.score_report,
+            strict_note_evaluation,
         ),
         assignments=dict(solver_result.assignments),
         score_report=solver_result.score_report,
+        note_evaluation=strict_note_evaluation,
+        gender_balance_penalty=_gender_balance_penalty(solver_result.score_report, settings),
+        changes_against_current=0,
     )
 
-    score_candidates = [
-        strict_option,
-        *[
+    summary_options = []
+    for summary, score in scored_summaries:
+        note_evaluation = evaluate_note_suggestions(
+            students,
+            summary.assignments,
+            available_class_ids=available_class_ids,
+            ignored_student_ids=ignored_note_student_ids,
+        )
+        summary_options.append(
             _summary_export_option(
                 option_id=f"candidate_score_pool_{summary.key}",
                 mode="Kandidat",
                 summary=summary,
                 score=score,
-                caption_prefix="Dokumentierter Prüfkandidat.",
+                caption_prefix="Dokumentierte Lösung.",
+                note_evaluation=note_evaluation,
+                gender_balance_penalty=_gender_balance_penalty(score, settings),
+                changes_against_current=_assignment_change_count(
+                    students,
+                    solver_result.assignments,
+                    summary.assignments,
+                ),
             )
-            for summary, score in scored_summaries
-        ],
-    ]
+        )
+
+    score_candidates = [strict_option, *summary_options]
     score_best = min(
         score_candidates,
-        key=lambda option: (
-            getattr(option.score_report, "total_score", 0),
-            getattr(option.score_report, "isolated_friend_request_count", 0),
-            option.candidate_key == "X",
-        ),
+        key=_export_candidate_rank_key,
     )
-
-    options = [
-        replace(
+    selected = score_best
+    decision_cards = summary_decision_candidate_cards(solver_result, student_count)
+    if decision_cards:
+        displayed_key = decision_cards[0][1].key
+        selected = next(
+            (option for option in summary_options if option.candidate_key == displayed_key),
             score_best,
-            option_id="score_best",
-            mode="Score-beste Lösung",
-            label=f"Score-beste Lösung (empfohlen): {score_best.candidate_key}",
+        )
+
+    return [
+        replace(
+            selected,
+            option_id="best",
+            mode="Beste Lösung",
+            label=f"Beste Lösung: {selected.candidate_key}",
             caption=_export_option_caption(
-                "Niedrigster dokumentierter Punktwert in der Kandidatenbewertung.",
-                score_best.score_report,
+                "Automatisch ausgewählte Lösung aus der Ergebnisansicht.",
+                selected.score_report,
+                selected.note_evaluation,
             ),
-        ),
-        strict_option,
+        )
     ]
-
-    profile_minimal = summary_diagnostic_candidate(solver_result, student_count)
-    balanced = summary_balanced_candidate(solver_result, student_count)
-    social = summary_social_strongest_candidate(solver_result, student_count)
-    score_by_key = {summary.key: score for summary, score in scored_summaries}
-    if profile_minimal and profile_minimal.assignments and profile_minimal.key in score_by_key:
-        options.append(
-            _summary_export_option(
-                option_id="profile_minimal",
-                mode="Profilminimal",
-                summary=profile_minimal,
-                score=score_by_key[profile_minimal.key],
-                caption_prefix="Strengere Vergleichsrichtung mit möglichst wenigen Mischklassen.",
-            )
-        )
-    if balanced and balanced.assignments:
-        options.append(
-            _summary_export_option(
-                option_id="balanced",
-                mode="Ausgewogen",
-                summary=balanced,
-                score=score_by_key[balanced.key],
-                caption_prefix="Profilkosten und soziale Werte gemeinsam prüfen.",
-            )
-        )
-    if social and social.assignments:
-        options.append(
-            _summary_export_option(
-                option_id="social",
-                mode="Sozialoptimiert",
-                summary=social,
-                score=score_by_key[social.key],
-                caption_prefix="Stärkste soziale Kennzahlen unter den Prüfkandidaten.",
-            )
-        )
-
-    return options
 
 
 def _candidate_key_for_assignments(assignments: dict[str, str], summaries: list) -> str | None:
@@ -1385,49 +1349,137 @@ def _summary_export_option(
     summary,
     score,
     caption_prefix: str,
+    note_evaluation: object | None = None,
+    gender_balance_penalty: int = 0,
+    changes_against_current: int = 0,
 ) -> ExportCandidateOption:
     return ExportCandidateOption(
         option_id=option_id,
         candidate_key=summary.key,
         mode=mode,
         label=f"{mode}: {summary.key} - {summary.name}",
-        caption=_export_option_caption(caption_prefix, score),
+        caption=_export_option_caption(caption_prefix, score, note_evaluation),
         assignments=dict(summary.assignments),
         score_report=score,
+        note_evaluation=note_evaluation,
+        gender_balance_penalty=gender_balance_penalty,
+        changes_against_current=changes_against_current,
     )
 
 
-def _export_option_caption(prefix: str, score) -> str:
-    return (
+def _export_option_caption(prefix: str, score, note_evaluation: object | None = None) -> str:
+    caption = (
         f"{prefix} Punktwert {getattr(score, 'total_score', '-')}; "
         f"ohne Wunschfreund {getattr(score, 'isolated_friend_request_count', '-')}; "
         f"Freund 1 {_ratio_text(getattr(score, 'friend1_fulfilled', 0), getattr(score, 'friend1_total', 0))}; "
         f"gegenseitig {_ratio_text(getattr(score, 'mutual_friend_fulfilled', 0), getattr(score, 'mutual_friend_total', 0))}."
     )
+    if getattr(note_evaluation, "has_any_finding", False):
+        caption += " " + note_suggestion_summary_text(note_evaluation) + "."
+    return caption
+
+
+def _export_candidate_rank_key(option: ExportCandidateOption) -> tuple[object, ...]:
+    score = option.score_report
+    note_evaluation = option.note_evaluation
+    return (
+        getattr(score, "total_score", float("inf")),
+        getattr(note_evaluation, "violated_rule_count", 0),
+        -getattr(note_evaluation, "fulfilled_rule_count", 0),
+        getattr(note_evaluation, "unresolved_risk_count", 0),
+        option.gender_balance_penalty,
+        option.changes_against_current,
+        getattr(score, "isolated_friend_request_count", float("inf")),
+        -getattr(score, "mutual_friend_fulfilled", 0),
+        -getattr(score, "friend1_fulfilled", 0),
+        -getattr(score, "friend2_fulfilled", 0),
+        option.candidate_key == "X",
+        option.candidate_key,
+    )
+
+
+def _ignored_note_student_ids_for_tiebreaker() -> set[str]:
+    return {
+        student_id
+        for student_id, status in _note_review_status_by_student().items()
+        if getattr(status, "value", status) == manual_rules_module.NoteReviewStatus.KEPT_AS_NOTE.value
+    }
+
+
+def _gender_balance_penalty(score, settings: OptimizationSettings) -> int:
+    if not score:
+        return 0
+    penalty = 0
+    for report in getattr(score, "class_reports", []):
+        if report.size < settings.gender_target_min_class_size:
+            continue
+        for count in (report.gender_counts.get("m", 0), report.gender_counts.get("w", 0)):
+            if count < settings.gender_target_min:
+                penalty += settings.gender_target_min - count
+            elif count > settings.gender_target_max:
+                penalty += count - settings.gender_target_max
+    return penalty
+
+
+def _assignment_change_count(
+    students: list[Student],
+    base_assignments: dict[str, str],
+    candidate_assignments: dict[str, str],
+) -> int:
+    return sum(
+        1
+        for student in students
+        if base_assignments.get(student.internal_id) != candidate_assignments.get(student.internal_id)
+    )
 
 
 def _render_export_choice(options: list[ExportCandidateOption]) -> ExportCandidateOption:
-    st.markdown("**Exportgrundlage wählen**")
-    option_by_id = {option.option_id: option for option in options}
-    option_ids = list(option_by_id)
-    selected_id = st.selectbox(
-        "Welche Lösung soll exportiert werden?",
-        options=option_ids,
-        format_func=lambda option_id: option_by_id[option_id].label,
-        index=0,
-        key="export_candidate_option",
-    )
-    selected = option_by_id[selected_id]
-    score_best_key = option_by_id[option_ids[0]].candidate_key
+    st.markdown("**Exportgrundlage**")
+    selected = options[0]
+    st.success(f"Automatisch gewählt: {selected.label}")
     st.caption(selected.caption)
-    if selected.candidate_key != score_best_key:
-        st.warning(
-            f"Achtung: Die gewählte Exportgrundlage {selected.candidate_key} ist nicht die "
-            f"score-beste dokumentierte Lösung. Score-beste Lösung: {score_best_key}."
-        )
-    else:
-        st.success("Diese Exportgrundlage ist die score-beste dokumentierte Lösung.")
     return selected
+
+
+def _render_release_warning_decisions(score, settings: OptimizationSettings) -> dict[str, str]:
+    warnings = [
+        finding
+        for finding in finality_module.class_finality_findings(score, settings)
+        if finding.level == "WARNING"
+    ]
+    if not warnings:
+        st.session_state.release_warning_decisions = {}
+        return {}
+
+    decisions = dict(st.session_state.get("release_warning_decisions", {}))
+    valid_ids = {finality_module.finding_id(finding) for finding in warnings}
+    decisions = {warning_id: status for warning_id, status in decisions.items() if warning_id in valid_ids}
+    status_options = {
+        "unreviewed": "nicht entschieden",
+        "accepted": "pädagogisch akzeptiert",
+        "rejected": "nicht akzeptiert - neu rechnen",
+    }
+    st.markdown("**Nicht kritische Warnungen**")
+    accepted_count = sum(1 for warning_id in valid_ids if decisions.get(warning_id) == "accepted")
+    st.caption(f"{accepted_count}/{len(warnings)} Warnungen pädagogisch akzeptiert.")
+    with st.expander("Warnungen anzeigen", expanded=False):
+        for finding in warnings:
+            warning_id = finality_module.finding_id(finding)
+            current_status = decisions.get(warning_id, "unreviewed")
+            selected_label = st.radio(
+                finding.message,
+                options=list(status_options.values()),
+                index=list(status_options).index(current_status) if current_status in status_options else 0,
+                key=f"release_warning_{warning_id}",
+                horizontal=True,
+            )
+            decisions[warning_id] = next(
+                status
+                for status, label in status_options.items()
+                if label == selected_label
+            )
+    st.session_state.release_warning_decisions = decisions
+    return decisions
 
 
 def _render_calculation_report(solver_result, student_count: int) -> None:
@@ -1442,8 +1494,12 @@ def _render_technical_expander(
     settings: OptimizationSettings,
     score,
     key_suffix: str,
+    *,
+    expanded: bool | None = None,
 ) -> None:
-    with st.expander("Technische Details anzeigen", expanded=_expert_mode()):
+    if expanded is None:
+        expanded = _expert_mode()
+    with st.expander("Technische Details anzeigen", expanded=expanded):
         st.caption("Dieser Bereich ist für Admins und Fehlersuche. Für die pädagogische Entscheidung reichen die Kandidatenkarten oben.")
         _render_quality_notice(solver_result, len(students))
 
@@ -1457,7 +1513,7 @@ def _render_technical_expander(
             st.dataframe(phase_frame, width="stretch", hide_index=True)
         recommendation_frame = _profile_recommendation_frame(solver_result)
         if not recommendation_frame.empty:
-            st.subheader("Empfohlene Prüfkandidaten")
+            st.subheader("Empfohlene Varianten")
             st.info(_profile_recommendation_text(solver_result))
             st.dataframe(recommendation_frame, width="stretch", hide_index=True)
         slack_frame = _profile_slack_frame(solver_result)
@@ -1483,7 +1539,7 @@ def _render_technical_expander(
             st.subheader("Strafpunkte je Kategorie")
             st.dataframe(penalty_frame, width="stretch", hide_index=True)
 
-        alert_frame = _class_alert_frame(score)
+        alert_frame = _class_alert_frame(score, settings)
         if not alert_frame.empty:
             st.subheader("Auffällige Klassen")
             st.dataframe(alert_frame, width="stretch", hide_index=True)
@@ -1556,6 +1612,18 @@ def _manual_rule_entries_for_export():
     return list(_manual_rule_entries())
 
 
+def _warning_decision_status_by_id() -> dict[str, str]:
+    return dict(st.session_state.get("release_warning_decisions", {}))
+
+
+def _accepted_warning_ids() -> set[str]:
+    return {
+        warning_id
+        for warning_id, status in _warning_decision_status_by_id().items()
+        if status == "accepted"
+    }
+
+
 def _export_blocker_messages(
     students: list[Student],
     assignments: dict[str, str],
@@ -1564,12 +1632,14 @@ def _export_blocker_messages(
     class_configs: list[ClassConfig],
     settings: OptimizationSettings,
 ) -> list[str]:
-    del assignments, class_configs, settings
+    del assignments, class_configs
     report = finality_module.finality_report(
         students,
         score,
         validation_messages,
         _note_review_status_by_student(),
+        settings=settings,
+        accepted_warning_ids=_accepted_warning_ids(),
     )
     return report.blocker_labels()
 
@@ -1579,11 +1649,7 @@ def _unreviewed_note_count(students: list[Student]) -> int:
 
 
 def _visible_validation_warnings(messages: list[ValidationMessage]) -> list[ValidationMessage]:
-    return [
-        message
-        for message in messages
-        if not (message.severity == "WARNUNG" and message.message == COMMENT_REVIEW_MESSAGE)
-    ]
+    return list(messages)
 
 
 def _solver_status_text(status: str) -> tuple[str, str]:
@@ -1604,7 +1670,7 @@ def _overall_status_text(status: str) -> tuple[str, str]:
     if status == "AUTO_APPROVABLE":
         return "Automatisch freigabefähig", "Soziale Grenze und technische Qualität sind im Zielbereich."
     if status == "REVIEW_CANDIDATES_FOUND":
-        return "Prüfkandidaten gefunden", "Die profilminimale Variante scheitert sozial, aber Varianten mit Profil-Lockerung erfüllen die soziale Grenze und müssen pädagogisch geprüft werden."
+        return "Beste Lösung gefunden", "Die profilminimale Variante scheitert sozial. Angezeigt wird die beste Lösung mit Profil-Lockerung; sie muss pädagogisch geprüft werden."
     if status == "STRICT_ONLY_NOT_APPROVABLE":
         return "Profilminimal nicht freigabefähig", "Nur die profilminimale Diagnose-Lösung liegt vor; die soziale Grenze wird verfehlt."
     if status == "NO_USABLE_SOLUTION_FOUND":
@@ -1722,8 +1788,12 @@ def _review_note_frame(rows) -> pd.DataFrame:
 def _note_review_status_text(status) -> str:
     if status == manual_rules_module.NoteReviewStatus.CONVERTED_TO_RULE:
         return "in Regel umgewandelt"
+    if status == manual_rules_module.NoteReviewStatus.DEACTIVATED_RULE:
+        return "deaktivierte Regel"
     if status == manual_rules_module.NoteReviewStatus.KEPT_AS_NOTE:
         return "als Hinweis behalten"
+    if status == manual_rules_module.NoteReviewStatus.UNRESOLVED_BLOCKER:
+        return "unklärbar"
     return "noch ungeprüft"
 
 
@@ -1743,7 +1813,7 @@ def _review_mixed_class_frame(rows) -> pd.DataFrame:
     )
 
 
-def _review_class_load_frame(rows) -> pd.DataFrame:
+def _review_class_load_frame(rows, settings: OptimizationSettings | None = None) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
@@ -1752,11 +1822,12 @@ def _review_class_load_frame(rows) -> pd.DataFrame:
                 "R": row.support_count,
                 "m": row.male_count,
                 "w": row.female_count,
-                "Geschlecht Zielzone": finality_module.gender_target_zone_text(),
+                "Geschlecht Zielzone": finality_module.gender_target_zone_text(settings),
                 "Geschlecht Bewertung": finality_module.gender_target_status(
                     row.size,
                     row.male_count,
                     row.female_count,
+                    settings,
                 ),
                 "größte Grundschule": row.largest_school_count,
                 "größte Grundschule/alte Klasse": row.largest_primary_class_count,
@@ -1794,10 +1865,11 @@ def _quality_verdict(solver_result, student_count: int) -> dict[str, str]:
             message += " Eine freigabefähige Lösung ist damit nicht widerlegt."
         review_candidates = _review_candidates(solver_result)
         if review_candidates:
-            message += f" Mit Profil-Lockerung wurden {len(review_candidates)} Prüfkandidaten gefunden."
+            best = review_candidates[0]
+            message += f" Mit Profil-Lockerung wurde die beste Lösung {best.variant} gefunden."
             return {
                 "severity": "warning",
-                "label": "Prüfkandidaten gefunden",
+                "label": "Beste Lösung gefunden",
                 "message": message,
             }
         return {"severity": "error", "label": "nicht freigabefähig", "message": message}
@@ -1954,10 +2026,17 @@ def _render_standard_result(
 
     st.subheader("Entscheidungsvorlage")
     if review_candidates:
+        recommended_cards = summary_decision_candidate_cards(solver_result, student_count)
+        recommended = recommended_cards[0][1] if recommended_cards else None
+        recommendation_text = (
+            f"Angezeigt wird die beste Lösung {recommended.key}. "
+            if recommended
+            else "Angezeigt wird die beste Lösung mit Profil-Lockerung. "
+        )
         st.warning(
             f"{status_label}: Die strenge Profilvariante ist sozial nicht brauchbar. "
-            f"{len(review_candidates)} Varianten mit Profil-Lockerung erfüllen die soziale Mindestgrenze. "
-            "Keine automatische Freigabe: pädagogische Prüfung nötig."
+            + recommendation_text
+            + "Keine automatische Freigabe: pädagogische Prüfung nötig."
         )
         if diagnostic:
             st.caption(
@@ -2002,7 +2081,7 @@ def _render_candidate_cards(
     cards = summary_decision_candidate_cards(solver_result, student_count)
     if not cards:
         return
-    st.markdown("**Prüfkandidaten**")
+    st.markdown("**Beste Lösung**")
     summaries = candidate_summaries(solver_result, student_count)
     note_statuses = _note_review_status_by_student()
     card_reviews = {
@@ -2049,7 +2128,7 @@ def _render_candidate_cards(
                     st.warning(candidate_review_module.review_readiness_text(review.readiness))
                 else:
                     st.info(caption)
-                if st.button("Kandidat prüfen", key=f"review_candidate_{key_suffix}_{summary.key}"):
+                if st.button("Lösung prüfen", key=f"review_candidate_{key_suffix}_{summary.key}"):
                     st.session_state.review_candidate_variant = summary.key
                     st.rerun()
     if blocked_reviews:
@@ -2075,23 +2154,27 @@ def _render_candidate_review(
     cards = summary_decision_candidate_cards(solver_result, student_count)
     if not cards:
         return
-    st.markdown("**Kandidatenprüfung**")
+    st.markdown("**Prüfung der besten Lösung**")
     label_by_key = {summary.key: title for title, summary, _ in cards}
     keys = [summary.key for _, summary, _ in cards]
     selected_key = st.session_state.get("review_candidate_variant")
     if selected_key not in keys:
         selected_key = keys[0]
-    selected_label = st.selectbox(
-        "Variante zur Prüfung",
-        options=keys,
-        format_func=lambda key: label_by_key.get(key, key),
-        index=keys.index(selected_key),
-        key=f"candidate_review_select_{key_suffix}",
-    )
+    if len(keys) == 1:
+        selected_label = selected_key
+        st.caption(f"Geprüft wird: {label_by_key.get(selected_label, selected_label)}")
+    else:
+        selected_label = st.selectbox(
+            "Variante zur Prüfung",
+            options=keys,
+            format_func=lambda key: label_by_key.get(key, key),
+            index=keys.index(selected_key),
+            key=f"candidate_review_select_{key_suffix}",
+        )
     st.session_state.review_candidate_variant = selected_label
     summary = next(item for _, item, _ in cards if item.key == selected_label)
     if not summary.assignments:
-        st.info("Für diesen Kandidaten liegt keine Klassenzuweisung zur Detailprüfung vor.")
+        st.info("Für diese Lösung liegt keine Klassenzuweisung zur Detailprüfung vor.")
         return
     review = candidate_review_module.build_candidate_review_model(
         summary,
@@ -2161,7 +2244,7 @@ def _render_candidate_review(
     with tab_c:
         note_rows = review.students_with_manual_notes
         if not note_rows:
-            st.success("Keine manuellen Notizen in diesem Kandidaten.")
+            st.success("Keine manuellen Notizen in dieser Lösung.")
         else:
             st.caption("Eindeutige Hinweise werden vorgeschlagen. Jede Notiz muss als Regel oder als Hinweis entschieden werden.")
             unreviewed_rows = [
@@ -2173,28 +2256,37 @@ def _render_candidate_review(
             converted_rows = [
                 row for row in note_rows if row.review_status == manual_rules_module.NoteReviewStatus.CONVERTED_TO_RULE
             ]
+            deactivated_rows = [
+                row for row in note_rows if row.review_status == manual_rules_module.NoteReviewStatus.DEACTIVATED_RULE
+            ]
+            unresolved_rows = [
+                row for row in note_rows if row.review_status == manual_rules_module.NoteReviewStatus.UNRESOLVED_BLOCKER
+            ]
             st.caption(
                 f"{len(unreviewed_rows)} ungeprüft · {len(kept_rows)} als Hinweis behalten · "
-                f"{len(converted_rows)} in Regeln umgewandelt"
+                f"{len(converted_rows)} aktive Regeln · {len(deactivated_rows)} deaktivierte Regeln · "
+                f"{len(unresolved_rows)} unklärbar"
             )
             _render_note_status_frame("Nicht ausgewertete Notizen", unreviewed_rows)
             _render_note_status_frame("Als Hinweis behalten", kept_rows)
-            _render_note_status_frame("In Regeln umgewandelte Notizen", converted_rows)
+            _render_note_status_frame("In aktive Regeln umgewandelte Notizen", converted_rows)
+            _render_note_status_frame("In deaktivierte Regeln umgewandelte Notizen", deactivated_rows)
+            _render_note_status_frame("Unklärbare Notizen", unresolved_rows)
             _render_note_rule_controls(note_rows, students, class_configs, settings, key_suffix)
     with tab_d:
         fl_frame = _review_mixed_class_frame(review.fl_mixed_classes)
         if fl_frame.empty:
-            st.success("Keine F/L-Mischklassen in diesem Kandidaten.")
+            st.success("Keine F/L-Mischklassen in dieser Lösung.")
         else:
             st.dataframe(fl_frame, width="stretch", hide_index=True)
     with tab_e:
         music_frame = _review_mixed_class_frame(review.music_mixed_classes)
         if music_frame.empty:
-            st.success("Keine Musik-Mischklassen in diesem Kandidaten.")
+            st.success("Keine Musik-Mischklassen in dieser Lösung.")
         else:
             st.dataframe(music_frame, width="stretch", hide_index=True)
     with tab_f:
-        st.dataframe(_review_class_load_frame(review.class_load_rows), width="stretch", hide_index=True)
+        st.dataframe(_review_class_load_frame(review.class_load_rows, settings), width="stretch", hide_index=True)
 
 
 def _render_note_rule_controls(
@@ -2204,7 +2296,7 @@ def _render_note_rule_controls(
     settings: OptimizationSettings,
     key_suffix: str,
 ) -> None:
-    st.markdown("**Notiz in Regel umwandeln**")
+    st.markdown("**Manuelle Notiz entscheiden**")
     note_by_id = {row.student_id: row for row in note_rows}
     note_options = list(note_by_id)
     if not note_options:
@@ -2237,6 +2329,7 @@ def _render_note_rule_controls(
         "Als Klassenfixierung anlegen",
         "Als erlaubte Klassen anlegen",
         "Nur als Hinweis behalten",
+        "Unklärbar dokumentieren",
     ]
     suggested_action = {
         "SEPARATE": "Als Trennregel anlegen",
@@ -2325,8 +2418,16 @@ def _render_note_rule_controls(
                     confirmed=True,
                 )
                 st.session_state.note_hints_kept = set(st.session_state.get("note_hints_kept", set()))
+                st.session_state.note_unresolved_blockers = set(st.session_state.get("note_unresolved_blockers", set()))
                 st.session_state.note_hints_kept.add(result.student_id)
+                st.session_state.note_unresolved_blockers.discard(result.student_id)
                 st.info("Notiz bleibt als Hinweis erhalten.")
+            elif action == "Unklärbar dokumentieren":
+                st.session_state.note_unresolved_blockers = set(st.session_state.get("note_unresolved_blockers", set()))
+                st.session_state.note_hints_kept = set(st.session_state.get("note_hints_kept", set()))
+                st.session_state.note_unresolved_blockers.add(selected_note_id)
+                st.session_state.note_hints_kept.discard(selected_note_id)
+                st.info("Notiz ist als unklärbar dokumentiert.")
             else:
                 rule_type = {
                     "Als Trennregel anlegen": "SEPARATE",
@@ -2357,6 +2458,10 @@ def _render_note_rule_controls(
                         st.error("Diese Regel erzeugt Konflikte und wurde nicht gespeichert.")
                         st.dataframe(messages_to_frame(errors), width="stretch", hide_index=True)
                     elif changed:
+                        st.session_state.note_hints_kept = set(st.session_state.get("note_hints_kept", set()))
+                        st.session_state.note_unresolved_blockers = set(st.session_state.get("note_unresolved_blockers", set()))
+                        st.session_state.note_hints_kept.discard(result.student_id)
+                        st.session_state.note_unresolved_blockers.discard(result.student_id)
                         st.success("Regel angelegt. Bitte danach neu optimieren.")
                     else:
                         st.info("Diese Regel ist bereits aktiv.")
@@ -2380,27 +2485,16 @@ def _render_quality_notice(solver_result, student_count: int) -> None:
     frame = _quality_summary_frame(solver_result, student_count, verdict)
     review_candidates = _review_candidates(solver_result)
     if review_candidates:
-        primary = _primary_candidate(solver_result)
-        balanced = _balanced_candidate(solver_result)
-        fl_candidate = _fl_conservative_candidate(solver_result)
-        candidate_parts = []
-        for label, report in (
-            ("sozial stärkste Alternative", primary),
-            ("balancierter Prüfkandidat", balanced),
-            ("F/L-schonender Prüfkandidat", fl_candidate),
-        ):
-            if report and report.variant not in {part[0] for part in candidate_parts}:
-                candidate_parts.append(
-                    (
-                        report.variant,
-                        f"{label}: {report.variant} mit {report.isolated_friend_request_count}/{student_count} ohne Wunschfreund",
-                    )
-                )
+        best = _primary_candidate(solver_result)
+        best_text = (
+            f"Beste Lösung: {best.variant} mit {best.isolated_friend_request_count}/{student_count} ohne Wunschfreund. "
+            if best
+            else "Beste Lösung mit Profil-Lockerung gefunden. "
+        )
         st.warning(
             "Strenge Profilvariante nicht freigabefähig; "
-            f"{len(review_candidates)} Prüfkandidat(en) mit Profil-Lockerung gefunden. "
-            + "; ".join(part[1] for part in candidate_parts)
-            + ". Keine automatische Freigabe wegen Profil-Lockerung und nicht belastbarer technischer Prüfung."
+            + best_text
+            + "Keine automatische Freigabe wegen Profil-Lockerung und nicht belastbarer technischer Prüfung."
         )
     else:
         if verdict["severity"] == "error":
@@ -2440,7 +2534,7 @@ def _quality_summary_frame(solver_result, student_count: int, verdict: dict[str,
     review_candidates = _review_candidates(solver_result)
     review_text = "; ".join(
         f"{report.variant}: {report.isolated_friend_request_count}/{student_count}"
-        for report in review_candidates[:3]
+        for report in review_candidates[:1]
     )
     return pd.DataFrame(
         [
@@ -2496,10 +2590,10 @@ def _quality_summary_frame(solver_result, student_count: int, verdict: dict[str,
                 "Bewertung": _isolation_label(isolated_share),
             },
             {
-                "Kennzahl": "Prüfkandidaten mit Profil-Lockerung",
+                "Kennzahl": "Beste Lösung mit Profil-Lockerung",
                 "Wert": review_text or "-",
                 "Bewertung": (
-                    "gültige Prüfkandidaten, nicht automatisch freigegeben"
+                    "gültige Lösung, nicht automatisch freigegeben"
                     if review_candidates
                     else "keine soziale Variante mit Profil-Lockerung im Zielbereich"
                 ),
@@ -2761,7 +2855,7 @@ def _candidate_summary(report) -> str:
         return "soziale Grenze nicht erfüllt"
     if report.gap_reliable:
         return "sozial im Zielbereich und Gap belastbar"
-    return "gültiger Prüfkandidat, aber nicht bewiesen optimal"
+    return "gültige Lösung, aber nicht bewiesen optimal"
 
 
 def _candidate_tradeoff_text(report, solver_result) -> str:
@@ -2819,10 +2913,13 @@ def _friend_profile_conflict_frame(score) -> pd.DataFrame:
     )
 
 
-def _class_alert_frame(score) -> pd.DataFrame:
+def _class_alert_frame(score, settings: OptimizationSettings | None = None) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     findings_by_class: dict[str, list[str]] = {}
-    for finding in finality_module.class_finality_findings(score):
+    max_primary_school = (
+        settings.max_primary_school_per_class if settings is not None else finality_module.MAX_PRIMARY_SCHOOL_PER_CLASS
+    )
+    for finding in finality_module.class_finality_findings(score, settings):
         if finding.class_id:
             findings_by_class.setdefault(finding.class_id, []).append(finding.message)
     for report in score.class_reports:
@@ -2837,7 +2934,7 @@ def _class_alert_frame(score) -> pd.DataFrame:
         school_counts = {school: count for school, count in report.school_counts.items() if school != "leer"}
         if school_counts:
             school, count = max(school_counts.items(), key=lambda item: item[1])
-            if finality_module.MAX_PRIMARY_SCHOOL_PER_CLASS >= count >= max(4, report.size // 3):
+            if max_primary_school >= count >= max(4, report.size // 3):
                 notes.append(f"Ballung Grundschule {school} ({count})")
         if notes:
             rows.append({"Klasse": report.class_id, "Auffälligkeit": "; ".join(notes)})

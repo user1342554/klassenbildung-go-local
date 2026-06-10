@@ -31,6 +31,10 @@ def _message_action(message: ValidationMessage) -> str:
         return "Spalte B prüfen: Die Schülernummer sollte eine Zahl sein."
     if "Schülernummer kommt mehrfach" in text:
         return "Spalte B prüfen: Jede Schülernummer darf nur einmal vorkommen."
+    if "Freundeswunsch" in text and "mehrdeutig" in text:
+        return "Freundeswunsch oder doppelte Nr prüfen: Der Eintrag muss auf genau einen Schüler zeigen."
+    if "Freundeswunsch" in text and "nicht zuordenbar" in text:
+        return "Freundeswunsch prüfen: Der Eintrag muss zu einer vorhandenen Nr oder einem eindeutigen Namen passen."
     if "Eignung ist leer oder ungewöhnlich" in text:
         return "Spalte F prüfen: Erwartet wird GYM oder R. Leere/andere Werte korrigieren oder bewusst so lassen."
     if "Geschlecht ist leer oder unbekannt" in text:
@@ -39,10 +43,10 @@ def _message_action(message: ValidationMessage) -> str:
         return "Spalte K prüfen: Erwartet wird F oder L."
     if "Musikklasse ist leer oder unbekannt" in text:
         return "Spalte L oder die Musik-Spalten M-P prüfen: Erwartet wird Reg, B, S oder G."
+    if "führende oder abschließende Leerzeichen" in text:
+        return "Zelle in Excel bereinigen: Leerzeichen vor oder nach dem Wert entfernen."
     if "Grundschulklasse wirkt uneinheitlich" in text:
         return "Spalte Q vereinheitlichen, z.B. 4a statt 4 a, 04A oder 0404a."
-    if "Bemerkung muss manuell geprüft werden" in text:
-        return "Bemerkung vor der Berechnung prüfen; eindeutige Hinweise kann die App als Regel vorbefüllen."
     if "Basis" in text and "fehlt" in text:
         return 'Excel-Datei prüfen: Das Arbeitsblatt muss "Basis" heißen.'
     if "Header-Zeile" in text:
@@ -59,6 +63,8 @@ def _message_action(message: ValidationMessage) -> str:
         return "Klassenprofile prüfen: Für diesen Schüler muss mindestens eine Klasse passen."
     if "Harte Profilregeln sind mit" in text:
         return "Klassengrößen/Profile lockern oder mehr passende Plätze schaffen."
+    if "Harte Grundschul" in text or "Harte R-Obergrenze" in text:
+        return "Grenze prüfen, zusätzliche Klasse schaffen oder pädagogische Ausnahme bewusst dokumentieren."
     return "Zeile und Spalte in der Excel-Datei prüfen."
 
 
