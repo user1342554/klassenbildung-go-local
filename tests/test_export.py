@@ -11,7 +11,7 @@ from klassenbildung.excel_io.excel_import import import_excel
 from klassenbildung.optimization.scoring import score_solution
 
 
-def test_export_only_contains_basis_and_class_sheets(sample_workbook_bytes: bytes) -> None:
+def test_export_contains_basis_assignment_overview_and_class_sheets(sample_workbook_bytes: bytes) -> None:
     result = import_excel(sample_workbook_bytes)
     class_configs = [
         ClassConfig("5a", "5a", 0, 3, [], []),
@@ -27,11 +27,21 @@ def test_export_only_contains_basis_and_class_sheets(sample_workbook_bytes: byte
     exported = export_excel(sample_workbook_bytes, result.students, assignments, class_configs, score, [])
     workbook = load_workbook(io.BytesIO(exported))
 
-    assert workbook.sheetnames == ["Basis", "5a", "5b"]
+    assert workbook.sheetnames == ["Basis", "Alle Klassen", "5a", "5b"]
     assert workbook["Basis"]["A2"].value == "5a"
     assert workbook["Basis"]["A3"].value == "5b"
     assert workbook["Basis"]["A4"].value == "5b"
     assert workbook["Basis"].max_row == 4
+    assert [cell.value for cell in workbook["Alle Klassen"][1]] == ["5a", "5b"]
+    assert workbook["Alle Klassen"].max_column == 2
+    assert [
+        [cell.value or "" for cell in row]
+        for row in workbook["Alle Klassen"].iter_rows(min_row=2, max_row=4)
+    ] == [
+        ["Klassenart: Reg + F", "Klassenart: S/Reg + F/L"],
+        ["Anna Alpha", "Ben Beta"],
+        ["", "Gina Gamma"],
+    ]
     assert workbook["5a"].max_row == 2
     assert workbook["5b"].max_row == 3
 
@@ -63,7 +73,9 @@ def test_export_removes_legacy_profile_and_info_sheets(sample_workbook_bytes: by
     exported = export_excel(source_bytes.getvalue(), result.students, assignments, class_configs, score, [])
     workbook = load_workbook(io.BytesIO(exported))
 
-    assert workbook.sheetnames == ["Basis", "5a", "5b", "5f"]
+    assert workbook.sheetnames == ["Basis", "Alle Klassen", "5a", "5b", "5f"]
+    assert [cell.value for cell in workbook["Alle Klassen"][1]] == ["5a", "5b", "5f"]
+    assert workbook["Alle Klassen"]["A2"].value == "Klassenart: S/Reg + F/L"
 
 
 def test_export_ignores_diagnostic_inputs_in_workbook_shape(sample_workbook_bytes: bytes) -> None:
@@ -86,4 +98,4 @@ def test_export_ignores_diagnostic_inputs_in_workbook_shape(sample_workbook_byte
     )
     workbook = load_workbook(io.BytesIO(exported))
 
-    assert workbook.sheetnames == ["Basis", "5a"]
+    assert workbook.sheetnames == ["Basis", "Alle Klassen", "5a"]

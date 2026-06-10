@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import hashlib
 from collections import Counter
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -9,6 +10,7 @@ from time import perf_counter
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 import klassenbildung.core.models as core_models_module
 import klassenbildung.core.settings as core_settings_module
@@ -16,6 +18,7 @@ import klassenbildung.excel_io.excel_export as excel_export_module
 import klassenbildung.presentation.candidate_review as candidate_review_module
 import klassenbildung.presentation.optimization_progress as optimization_progress_module
 import klassenbildung.presentation.candidate_summary as candidate_summary_module
+import klassenbildung.presentation.assignment_overview as assignment_overview_module
 import klassenbildung.services.manual_rules as manual_rules_module
 import klassenbildung.services.note_rule_conversion as note_rule_conversion_module
 import klassenbildung.validation.finality as finality_module
@@ -73,6 +76,7 @@ def _reload_stale_project_modules() -> None:
     global save_class_configs, save_settings
     global export_excel
     global candidate_review_module, candidate_summary_module
+    global assignment_overview_module
     global optimization_progress_module
     global manual_rules_module
     global note_rule_conversion_module
@@ -82,6 +86,10 @@ def _reload_stale_project_modules() -> None:
         or "max_primary_school_per_class" not in getattr(OptimizationSettings, "__dataclass_fields__", {})
     )
     stale_summary = not hasattr(candidate_summary_module, "candidate_summary_records")
+    stale_assignment_overview = (
+        not hasattr(assignment_overview_module, "assignment_overview_headers")
+        or not hasattr(assignment_overview_module, "assignment_board_columns")
+    )
     stale_progress = not hasattr(optimization_progress_module, "progress_event_message")
     stale_manual_rules = (
         not hasattr(manual_rules_module, "student_effective_note_text")
@@ -114,6 +122,7 @@ def _reload_stale_project_modules() -> None:
     if (
         not stale_core
         and not stale_summary
+        and not stale_assignment_overview
         and not stale_progress
         and not stale_review
         and not stale_export
@@ -143,6 +152,9 @@ def _reload_stale_project_modules() -> None:
     if stale_summary:
         candidate_summary_module = importlib.reload(candidate_summary_module)
 
+    if stale_assignment_overview:
+        assignment_overview_module = importlib.reload(assignment_overview_module)
+
     if stale_progress:
         optimization_progress_module = importlib.reload(optimization_progress_module)
 
@@ -155,7 +167,7 @@ def _reload_stale_project_modules() -> None:
     if stale_note_rules:
         note_rule_conversion_module = importlib.reload(note_rule_conversion_module)
 
-    if stale_export or stale_summary or stale_review:
+    if stale_export or stale_summary or stale_review or stale_assignment_overview:
         export_excel = importlib.reload(excel_export_module).export_excel
 
 
@@ -177,6 +189,12 @@ _reload_stale_project_modules()
 st.set_page_config(page_title="Klassenbildung", layout="wide")
 
 DUMMY_EXCEL_PATH = Path("DummyDaten.xlsx")
+ASSIGNMENT_BOARD_COMPONENT = components.declare_component(
+    "assignment_board",
+    path=Path(__file__).parent / "klassenbildung" / "components" / "assignment_board",
+)
+
+
 @dataclass(frozen=True)
 class ExportCandidateOption:
     option_id: str
@@ -317,7 +335,7 @@ def main() -> None:
     with tabs[0]:
         _upload_tab(settings)
     with tabs[1]:
-        _settings_tab()
+        settings = _settings_tab(settings)
     with tabs[2]:
         _optimization_tab(settings)
     with tabs[3]:
@@ -337,6 +355,13 @@ def _init_state() -> None:
     st.session_state.setdefault("note_hints_kept", set())
     st.session_state.setdefault("student_data_hash", None)
     st.session_state.setdefault("manual_rule_reset_message", None)
+    st.session_state.setdefault("export_editor_context_key", None)
+    st.session_state.setdefault("export_editor_assignments", {})
+    st.session_state.setdefault("export_editor_check_hash", None)
+    st.session_state.setdefault("export_editor_check_violations", None)
+    st.session_state.setdefault("export_editor_evaluation_key", None)
+    st.session_state.setdefault("export_editor_score_report", None)
+    st.session_state.setdefault("export_editor_note_evaluation", None)
 
 
 def _set_import_result(result) -> None:
@@ -345,6 +370,7 @@ def _set_import_result(result) -> None:
     st.session_state.import_result = result
     st.session_state.validation_result = None
     st.session_state.solver_result = None
+    _clear_export_editor_state()
     if old_hash and old_hash != new_hash:
         _clear_manual_rule_state()
         st.session_state.manual_rule_reset_message = (
@@ -359,6 +385,16 @@ def _clear_manual_rule_state() -> None:
     st.session_state.note_hints_kept = set()
     st.session_state.note_unresolved_blockers = set()
     st.session_state.release_warning_decisions = {}
+
+
+def _clear_export_editor_state() -> None:
+    st.session_state.export_editor_context_key = None
+    st.session_state.export_editor_assignments = {}
+    st.session_state.export_editor_check_hash = None
+    st.session_state.export_editor_check_violations = None
+    st.session_state.export_editor_evaluation_key = None
+    st.session_state.export_editor_score_report = None
+    st.session_state.export_editor_note_evaluation = None
 
 
 def _manual_rules() -> list[ManualRule]:
@@ -446,8 +482,7 @@ def _migrate_previous_default_weights(settings: OptimizationSettings) -> Optimiz
     return settings
 
 
-def _settings_tab() -> None:
-    current = _current_settings()
+def _settings_tab(current: OptimizationSettings) -> OptimizationSettings:
     result = st.session_state.import_result
 
     st.subheader("Klassenrahmen und Rechenzeit")
@@ -509,7 +544,6 @@ def _settings_tab() -> None:
         existing_profiles=class_configs,
     )
     preview_configs = _without_generated_labels(preview_configs)
-    st.session_state.class_configs = preview_configs
     st.dataframe(_class_size_preview_frame(preview_configs), width="stretch", hide_index=True)
 
     st.subheader("Gewichtungen")
@@ -620,14 +654,19 @@ def _settings_tab() -> None:
         **advanced,
     )
 
-    if st.button("Einstellungen übernehmen"):
+    settings_changed = settings != current
+    class_configs_changed = preview_configs != class_configs
+    if settings_changed or class_configs_changed:
         save_class_configs(preview_configs)
         save_settings(settings)
         st.session_state.settings = settings
         st.session_state.class_configs = preview_configs
         st.session_state.solver_result = None
-        st.success("Einstellungen übernommen.")
-        st.rerun()
+    else:
+        st.session_state.settings = settings
+        st.session_state.class_configs = preview_configs
+    st.caption("Änderungen werden automatisch übernommen.")
+    return settings
 
 
 def _advanced_weight_values(current: OptimizationSettings) -> dict[str, int]:
@@ -1157,10 +1196,9 @@ def _optimization_tab(settings: OptimizationSettings) -> None:
         if solver_result.score_report:
             score = solver_result.score_report
             st.success(optimization_progress_module.wishfriend_result_summary(solver_result, len(result.students)))
+            _render_calculation_result_stats(score, len(result.students))
             if score.hard_violations:
                 st.error("Das Ergebnis enthält harte Regelverletzungen und sollte so nicht exportiert werden.")
-            else:
-                st.success("Harte Regelverletzungen: 0")
             _render_technical_expander(
                 solver_result,
                 result.students,
@@ -1198,6 +1236,40 @@ def _result_tab(settings: OptimizationSettings) -> None:
         return
     export_option = export_options[0]
     st.session_state.release_warning_decisions = {}
+    edited_assignments = _editable_export_assignments(
+        result.students,
+        export_option.assignments,
+        st.session_state.class_configs,
+    )
+    manual_change_count = _assignment_change_count(result.students, export_option.assignments, edited_assignments)
+    if manual_change_count:
+        edited_score, edited_note_evaluation = _manual_export_evaluation(
+            result.students,
+            edited_assignments,
+            settings,
+            st.session_state.class_configs,
+        )
+    else:
+        edited_score = export_option.score_report
+        edited_note_evaluation = export_option.note_evaluation
+    if manual_change_count:
+        st.info(f"{manual_change_count} Kind(er) manuell verschoben. Der Excel-Download nutzt diese bearbeitete Liste.")
+    _render_manual_assignment_check(edited_assignments, edited_score)
+    export_option = replace(
+        export_option,
+        candidate_key=f"{export_option.candidate_key} manuell" if manual_change_count else export_option.candidate_key,
+        assignments=edited_assignments,
+        score_report=edited_score,
+        note_evaluation=edited_note_evaluation,
+        mode="Manuell bearbeitet" if manual_change_count else export_option.mode,
+        label=f"Manuell bearbeitet: {export_option.candidate_key}" if manual_change_count else export_option.label,
+        caption=_export_option_caption(
+            "Manuell bearbeitete Klassenliste." if manual_change_count else "Automatisch ausgewählte Lösung aus der Ergebnisansicht.",
+            edited_score,
+            edited_note_evaluation,
+        ),
+        changes_against_current=manual_change_count,
+    )
     export_bytes = export_excel(
         result.workbook_bytes,
         result.students,
@@ -1224,11 +1296,11 @@ def _result_tab(settings: OptimizationSettings) -> None:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
     _render_technical_expander(
-        solver_result,
+        replace(solver_result, assignments=export_option.assignments, score_report=export_option.score_report),
         result.students,
         st.session_state.class_configs,
         settings,
-        solver_result.score_report,
+        export_option.score_report,
         "ergebnis",
         expanded=False,
     )
@@ -1332,6 +1404,168 @@ def _export_candidate_options(
             ),
         )
     ]
+
+
+def _editable_export_assignments(
+    students: list[Student],
+    base_assignments: dict[str, str],
+    class_configs: list[ClassConfig],
+) -> dict[str, str]:
+    context_key = _export_editor_context_key(students, base_assignments, class_configs)
+    if st.session_state.get("export_editor_context_key") != context_key:
+        st.session_state.export_editor_context_key = context_key
+        st.session_state.export_editor_assignments = dict(base_assignments)
+
+    current_assignments = _complete_export_assignments(
+        students,
+        st.session_state.get("export_editor_assignments", {}),
+        base_assignments,
+    )
+
+    st.subheader("Alle Klassen")
+    if st.button("Zur berechneten Lösung zurücksetzen", key=f"export_editor_reset_{context_key}"):
+        st.session_state.export_editor_assignments = dict(base_assignments)
+        st.session_state.export_editor_check_hash = None
+        st.session_state.export_editor_check_violations = None
+        st.session_state.export_editor_evaluation_key = None
+        st.session_state.export_editor_score_report = None
+        st.session_state.export_editor_note_evaluation = None
+        st.rerun()
+
+    columns = assignment_overview_module.assignment_board_columns(
+        students,
+        current_assignments,
+        class_configs,
+    )
+    board_value = ASSIGNMENT_BOARD_COMPONENT(
+        columns=columns,
+        default={"columns": columns},
+        key=f"export_assignment_board_{context_key}",
+    )
+    edited_assignments = assignment_overview_module.assignments_from_board_value(
+        board_value,
+        current_assignments,
+    )
+
+    if edited_assignments != current_assignments:
+        st.session_state.export_editor_assignments = dict(edited_assignments)
+        st.session_state.export_editor_check_hash = None
+        st.session_state.export_editor_check_violations = None
+        st.session_state.export_editor_evaluation_key = None
+        st.session_state.export_editor_score_report = None
+        st.session_state.export_editor_note_evaluation = None
+        st.rerun()
+    return edited_assignments
+
+
+def _render_manual_assignment_check(assignments: dict[str, str], score) -> None:
+    assignments_hash = _assignments_hash(assignments)
+    if st.button("Liste prüfen", key=f"export_editor_check_{assignments_hash}"):
+        st.session_state.export_editor_check_hash = assignments_hash
+        st.session_state.export_editor_check_violations = list(score.hard_violations)
+
+    if st.session_state.get("export_editor_check_hash") != assignments_hash:
+        return
+
+    violations = st.session_state.get("export_editor_check_violations") or []
+    if violations:
+        st.error("Die manuell bearbeitete Liste enthält harte Regelverletzungen.")
+        with st.expander("Regelverletzungen anzeigen"):
+            st.dataframe(pd.DataFrame({"Meldung": violations}), width="stretch", hide_index=True)
+    else:
+        st.success("Keine harten Regelverletzungen in der manuell bearbeiteten Liste.")
+
+
+def _manual_export_evaluation(
+    students: list[Student],
+    assignments: dict[str, str],
+    settings: OptimizationSettings,
+    class_configs: list[ClassConfig],
+):
+    active_rules = _manual_rules()
+    ignored_note_student_ids = _ignored_note_student_ids_for_tiebreaker()
+    evaluation_key = _export_editor_evaluation_key(
+        assignments,
+        settings,
+        class_configs,
+        active_rules,
+        ignored_note_student_ids,
+    )
+    cached_score = st.session_state.get("export_editor_score_report")
+    cached_note_evaluation = st.session_state.get("export_editor_note_evaluation")
+    if (
+        st.session_state.get("export_editor_evaluation_key") == evaluation_key
+        and cached_score is not None
+        and cached_note_evaluation is not None
+    ):
+        return cached_score, cached_note_evaluation
+
+    score = score_solution(
+        students,
+        assignments,
+        settings,
+        class_configs,
+        active_rules,
+    )
+    note_evaluation = evaluate_note_suggestions(
+        students,
+        assignments,
+        available_class_ids=[config.class_id for config in class_configs],
+        ignored_student_ids=ignored_note_student_ids,
+    )
+    st.session_state.export_editor_evaluation_key = evaluation_key
+    st.session_state.export_editor_score_report = score
+    st.session_state.export_editor_note_evaluation = note_evaluation
+    return score, note_evaluation
+
+
+def _complete_export_assignments(
+    students: list[Student],
+    assignments: dict[str, str],
+    fallback_assignments: dict[str, str],
+) -> dict[str, str]:
+    return {
+        student.internal_id: assignments.get(student.internal_id) or fallback_assignments.get(student.internal_id, "")
+        for student in students
+    }
+
+
+def _export_editor_context_key(
+    students: list[Student],
+    base_assignments: dict[str, str],
+    class_configs: list[ClassConfig],
+) -> str:
+    payload = repr(
+        (
+            [(student.internal_id, student.row_number, student.nr, student.full_name) for student in students],
+            sorted(base_assignments.items()),
+            [config.class_id for config in class_configs],
+        )
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _assignments_hash(assignments: dict[str, str]) -> str:
+    return hashlib.sha256(repr(sorted(assignments.items())).encode("utf-8")).hexdigest()[:16]
+
+
+def _export_editor_evaluation_key(
+    assignments: dict[str, str],
+    settings: OptimizationSettings,
+    class_configs: list[ClassConfig],
+    active_rules: list[ManualRule],
+    ignored_note_student_ids: set[str],
+) -> str:
+    payload = repr(
+        (
+            sorted(assignments.items()),
+            settings,
+            class_configs,
+            active_rules,
+            sorted(ignored_note_student_ids),
+        )
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 def _candidate_key_for_assignments(assignments: dict[str, str], summaries: list) -> str | None:
@@ -1664,6 +1898,12 @@ def _solver_status_text(status: str) -> tuple[str, str]:
     if status == "MISSING_DEPENDENCY":
         return "OR-Tools fehlt", "Es wurde kein vollständiger Optimierer gefunden."
     return status, "Technischer Berechnungsstatus."
+
+
+def _render_calculation_result_stats(score, student_count: int) -> None:
+    cols = st.columns(2)
+    cols[0].metric("Harte Regelverletzungen", len(score.hard_violations))
+    cols[1].metric("Kinder ohne Wunschfreund", f"{score.isolated_friend_request_count}/{student_count}")
 
 
 def _overall_status_text(status: str) -> tuple[str, str]:

@@ -85,8 +85,9 @@ def test_full_manual_workflow_note_rule_solve_review_export() -> None:
     )
     workbook = load_workbook(io.BytesIO(exported))
 
-    assert workbook.sheetnames == ["Basis", "5a", "5b"]
+    assert workbook.sheetnames == ["Basis", "Alle Klassen", "5a", "5b"]
     assert {workbook["Basis"][f"A{row}"].value for row in range(1, 5)} == {"5a", "5b"}
+    assert [cell.value for cell in workbook["Alle Klassen"][1]] == ["5a", "5b"]
     assert workbook["5a"].max_row + workbook["5b"].max_row == 6
 
 

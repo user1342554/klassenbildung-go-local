@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --assignment-bg: #ffffff;
+      --assignment-header-bg: #f6f8fa;
+      --assignment-border: rgba(49, 51, 63, 0.2);
+      --assignment-text: #24292f;
+      --assignment-muted: #57606a;
+      --assignment-focus: #0969da;
+      --assignment-drop: #ddf4ff;
+      --assignment-font: "Source Sans Pro", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      background: transparent;
+      color: var(--assignment-text);
+      font-family: var(--assignment-font);
+      margin: 0;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    .assignment-wrap {
+      background: var(--assignment-bg);
+      border: 1px solid var(--assignment-border);
+      border-radius: 6px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0 0 1px;
+      width: 100%;
+    }
+
+    .assignment-actions {
+      display: flex;
+      justify-content: flex-start;
+      margin-bottom: 8px;
+      min-height: 34px;
+      visibility: hidden;
+    }
+
+    .assignment-actions.has-dirty {
+      visibility: visible;
+    }
+
+    .assignment-actions:empty {
+      margin-bottom: 0;
+      min-height: 0;
+    }
+
+    .assignment-apply {
+      appearance: none;
+      background: var(--assignment-bg);
+      border: 1px solid var(--assignment-border);
+      border-radius: 6px;
+      color: var(--assignment-text);
+      cursor: pointer;
+      display: inline-flex;
+      font: inherit;
+      font-size: 13px;
+      line-height: 20px;
+      min-height: 34px;
+      padding: 6px 12px;
+    }
+
+    .assignment-apply:focus-visible {
+      outline: 2px solid var(--assignment-focus);
+      outline-offset: 2px;
+    }
+
+    .assignment-apply:hover {
+      border-color: var(--assignment-focus);
+      color: var(--assignment-focus);
+    }
+
+    .assignment-table {
+      background: var(--assignment-bg);
+      display: grid;
+      min-width: 100%;
+      width: 100%;
+    }
+
+    .assignment-header,
+    .assignment-cell {
+      border-bottom: 1px solid var(--assignment-border);
+      border-right: 1px solid var(--assignment-border);
+    }
+
+    .assignment-header {
+      align-items: flex-start;
+      background: var(--assignment-header-bg);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 44px;
+      padding: 6px 9px;
+      text-align: left;
+    }
+
+    .assignment-class-id {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 17px;
+    }
+
+    .assignment-class-type {
+      color: var(--assignment-muted);
+      font-size: 12px;
+      font-weight: 400;
+      line-height: 16px;
+      margin-top: 2px;
+      overflow-wrap: anywhere;
+    }
+
+    .assignment-cell {
+      background: var(--assignment-bg);
+      min-height: 34px;
+      padding: 0;
+      transition: background-color 100ms ease, outline-color 100ms ease;
+    }
+
+    .assignment-cell.is-drop-target {
+      background: var(--assignment-drop);
+      outline: 2px solid var(--assignment-focus);
+      outline-offset: -2px;
+    }
+
+    .assignment-student {
+      align-items: center;
+      appearance: none;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
+      color: var(--assignment-text);
+      cursor: grab;
+      display: flex;
+      font: inherit;
+      font-size: 13px;
+      justify-content: flex-start;
+      line-height: 18px;
+      margin: 0;
+      min-height: 34px;
+      overflow-wrap: anywhere;
+      padding: 6px 9px;
+      text-align: left;
+      width: 100%;
+    }
+
+    .assignment-student:active {
+      cursor: grabbing;
+    }
+
+    .assignment-student:focus-visible {
+      outline: 2px solid var(--assignment-focus);
+      outline-offset: -2px;
+    }
+
+    .assignment-student.is-dragging {
+      opacity: 0.42;
+    }
+
+    .assignment-empty {
+      min-height: 34px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    const COMPONENT_READY = "streamlit:componentReady";
+    const RENDER_EVENT = "streamlit:render";
+    const SET_COMPONENT_VALUE = "streamlit:setComponentValue";
+    const SET_FRAME_HEIGHT = "streamlit:setFrameHeight";
+
+    const state = {
+      columns: [],
+      disabled: false,
+      draggingStudentId: null,
+      dirty: false,
+    };
+
+    function sendMessage(type, payload) {
+      window.parent.postMessage(
+        Object.assign({ isStreamlitMessage: true, type }, payload),
+        "*",
+      );
+    }
+
+    function setComponentReady() {
+      sendMessage(COMPONENT_READY, { apiVersion: 1 });
+    }
+
+    function setFrameHeight() {
+      window.requestAnimationFrame(() => {
+        const height = Math.ceil(document.documentElement.scrollHeight);
+        sendMessage(SET_FRAME_HEIGHT, { height });
+      });
+    }
+
+    function setComponentValue() {
+      sendMessage(SET_COMPONENT_VALUE, {
+        value: { columns: state.columns },
+        dataType: "json",
+      });
+    }
+
+    function normalizeColumns(columns) {
+      if (!Array.isArray(columns)) {
+        return [];
+      }
+      return columns.map((column) => ({
+        class_id: String(column.class_id || ""),
+        class_type: String(column.class_type || ""),
+        students: Array.isArray(column.students)
+          ? column.students
+              .map((student) => ({
+                id: String(student.id || ""),
+                label: String(student.label || student.id || ""),
+              }))
+              .filter((student) => student.id)
+          : [],
+      }));
+    }
+
+    function applyTheme(theme) {
+      if (!theme) {
+        return;
+      }
+      const root = document.documentElement;
+      const darkTheme = isDarkColor(theme.backgroundColor);
+      if (theme.backgroundColor) {
+        root.style.setProperty("--assignment-bg", theme.backgroundColor);
+      }
+      if (theme.secondaryBackgroundColor) {
+        root.style.setProperty("--assignment-header-bg", theme.secondaryBackgroundColor);
+      }
+      root.style.setProperty(
+        "--assignment-border",
+        darkTheme ? "rgba(250, 250, 250, 0.16)" : "rgba(49, 51, 63, 0.2)",
+      );
+      root.style.setProperty(
+        "--assignment-muted",
+        darkTheme ? "rgba(250, 250, 250, 0.55)" : "rgba(49, 51, 63, 0.65)",
+      );
+      if (theme.textColor) {
+        root.style.setProperty("--assignment-text", theme.textColor);
+      }
+      if (theme.primaryColor) {
+        root.style.setProperty("--assignment-focus", theme.primaryColor);
+        root.style.setProperty(
+          "--assignment-drop",
+          darkTheme ? withAlpha(theme.primaryColor, 0.18) : withAlpha(theme.primaryColor, 0.12),
+        );
+      }
+      if (theme.font) {
+        root.style.setProperty("--assignment-font", theme.font);
+      }
+    }
+
+    function isDarkColor(color) {
+      const rgb = parseColor(color);
+      if (!rgb) {
+        return false;
+      }
+      const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+      return luminance < 0.45;
+    }
+
+    function withAlpha(color, alpha) {
+      const rgb = parseColor(color);
+      if (!rgb) {
+        return color;
+      }
+      return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+    }
+
+    function parseColor(color) {
+      if (!color || typeof color !== "string") {
+        return null;
+      }
+      const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+      if (hex) {
+        const value = hex[1].length === 3
+          ? hex[1].split("").map((item) => item + item).join("")
+          : hex[1];
+        return {
+          r: parseInt(value.slice(0, 2), 16),
+          g: parseInt(value.slice(2, 4), 16),
+          b: parseInt(value.slice(4, 6), 16),
+        };
+      }
+      const rgb = color.trim().match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+      if (rgb) {
+        return { r: Number(rgb[1]), g: Number(rgb[2]), b: Number(rgb[3]) };
+      }
+      return null;
+    }
+
+    function render(updateHeight = true) {
+      const root = document.getElementById("root");
+      root.textContent = "";
+      root.appendChild(createActions());
+      const wrap = document.createElement("div");
+      wrap.className = "assignment-wrap";
+
+      const table = document.createElement("div");
+      table.className = "assignment-table";
+      const classCount = Math.max(state.columns.length, 1);
+      table.style.gridTemplateColumns = `repeat(${classCount}, minmax(132px, 1fr))`;
+      table.style.minWidth = `${classCount * 132}px`;
+      wrap.appendChild(table);
+
+      state.columns.forEach((column) => {
+        table.appendChild(createHeader(column));
+      });
+
+      const maxRows = Math.max(1, ...state.columns.map((column) => column.students.length + 1));
+      for (let rowIndex = 0; rowIndex < maxRows; rowIndex += 1) {
+        state.columns.forEach((column) => {
+          table.appendChild(createCell(column, rowIndex));
+        });
+      }
+
+      root.appendChild(wrap);
+      if (updateHeight) {
+        setFrameHeight();
+      }
+    }
+
+    function createActions() {
+      const actions = document.createElement("div");
+      actions.className = state.dirty
+        ? "assignment-actions has-dirty"
+        : "assignment-actions";
+
+      const applyButton = document.createElement("button");
+      applyButton.className = "assignment-apply";
+      applyButton.type = "button";
+      applyButton.textContent = "Änderungen übernehmen";
+      applyButton.disabled = state.disabled || !state.dirty;
+      applyButton.addEventListener("click", () => {
+        state.dirty = false;
+        setComponentValue();
+        render(false);
+      });
+      actions.appendChild(applyButton);
+      return actions;
+    }
+
+    function createHeader(column) {
+      const header = document.createElement("div");
+      header.className = "assignment-header";
+
+      const classId = document.createElement("div");
+      classId.className = "assignment-class-id";
+      classId.textContent = column.class_id;
+      header.appendChild(classId);
+
+      const classType = document.createElement("div");
+      classType.className = "assignment-class-type";
+      classType.textContent = column.class_type;
+      header.appendChild(classType);
+
+      return header;
+    }
+
+    function createCell(column, rowIndex) {
+      const cell = document.createElement("div");
+      cell.className = "assignment-cell";
+      cell.dataset.classId = column.class_id;
+      cell.dataset.rowIndex = String(rowIndex);
+      cell.addEventListener("dragover", onDragOver);
+      cell.addEventListener("dragenter", onDragEnter);
+      cell.addEventListener("dragleave", onDragLeave);
+      cell.addEventListener("drop", onDrop);
+
+      const student = column.students[rowIndex];
+      if (student) {
+        cell.appendChild(createStudent(student));
+      } else {
+        const empty = document.createElement("div");
+        empty.className = "assignment-empty";
+        cell.appendChild(empty);
+      }
+      return cell;
+    }
+
+    function createStudent(student) {
+      const button = document.createElement("button");
+      button.className = "assignment-student";
+      button.draggable = !state.disabled;
+      button.type = "button";
+      button.textContent = student.label;
+      button.title = student.label;
+      button.dataset.studentId = student.id;
+      button.setAttribute("aria-label", student.label);
+      button.addEventListener("dragstart", onDragStart);
+      button.addEventListener("dragend", onDragEnd);
+      if (student.id === state.draggingStudentId) {
+        button.classList.add("is-dragging");
+      }
+      return button;
+    }
+
+    function onDragStart(event) {
+      if (state.disabled) {
+        event.preventDefault();
+        return;
+      }
+      const studentId = event.currentTarget.dataset.studentId;
+      state.draggingStudentId = studentId;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", studentId);
+      event.currentTarget.classList.add("is-dragging");
+    }
+
+    function onDragEnd() {
+      state.draggingStudentId = null;
+      clearDropTargets();
+      render(false);
+    }
+
+    function onDragOver(event) {
+      if (!state.draggingStudentId) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    }
+
+    function onDragEnter(event) {
+      if (!state.draggingStudentId) {
+        return;
+      }
+      event.currentTarget.classList.add("is-drop-target");
+    }
+
+    function onDragLeave(event) {
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        event.currentTarget.classList.remove("is-drop-target");
+      }
+    }
+
+    function onDrop(event) {
+      if (!state.draggingStudentId) {
+        return;
+      }
+      event.preventDefault();
+      const targetClassId = event.currentTarget.dataset.classId;
+      const targetIndex = Number(event.currentTarget.dataset.rowIndex || 0);
+      moveStudent(state.draggingStudentId, targetClassId, targetIndex);
+      state.draggingStudentId = null;
+      clearDropTargets();
+      render(false);
+    }
+
+    function moveStudent(studentId, targetClassId, targetIndex) {
+      const fromColumn = state.columns.find((column) =>
+        column.students.some((student) => student.id === studentId),
+      );
+      const toColumn = state.columns.find((column) => column.class_id === targetClassId);
+      if (!fromColumn || !toColumn) {
+        return false;
+      }
+
+      const fromIndex = fromColumn.students.findIndex((student) => student.id === studentId);
+      if (fromIndex < 0) {
+        return false;
+      }
+      const [student] = fromColumn.students.splice(fromIndex, 1);
+      let insertIndex = targetIndex;
+      if (fromColumn === toColumn && fromIndex < insertIndex) {
+        insertIndex -= 1;
+      }
+      insertIndex = Math.max(0, Math.min(insertIndex, toColumn.students.length));
+      toColumn.students.splice(insertIndex, 0, student);
+      const changed = fromColumn !== toColumn || fromIndex !== insertIndex;
+      if (changed) {
+        state.dirty = true;
+      }
+      return changed;
+    }
+
+    function clearDropTargets() {
+      document.querySelectorAll(".assignment-cell.is-drop-target").forEach((cell) => {
+        cell.classList.remove("is-drop-target");
+      });
+    }
+
+    window.addEventListener("message", (event) => {
+      const data = event.data || {};
+      if (data.type !== RENDER_EVENT) {
+        return;
+      }
+      applyTheme(data.theme);
+      state.disabled = Boolean(data.disabled);
+      state.columns = normalizeColumns((data.args || {}).columns);
+      state.dirty = false;
+      render();
+    });
+
+    setComponentReady();
+  </script>
+</body>
+</html>

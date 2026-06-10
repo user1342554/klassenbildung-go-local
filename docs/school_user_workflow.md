@@ -101,8 +101,12 @@ Entscheide anhand dieser Listen, ob die neue Loesung besser pruefbar ist als das
 ## 9. Export erzeugen
 
 Die App nimmt automatisch die beste dokumentierte Loesung als Exportgrundlage.
-Der Excel-Export enthaelt nur noch das Blatt `Basis` und je ein Klassenblatt
-fuer 5a, 5b, 5c und so weiter.
+In der Ergebnisansicht kann die Klassenliste bei Bedarf noch manuell bearbeitet
+werden. Der Button `Liste pruefen` zeigt, ob die bearbeitete Liste harte Regeln
+verletzt.
+
+Der Excel-Export enthaelt das Blatt `Basis`, das Sammelblatt `Alle Klassen` und
+je ein Klassenblatt fuer 5a, 5b, 5c und so weiter.
 
 Offene Notizen, Datenprobleme und Warnungen bleiben in der App sichtbar. Sie
 werden nicht mehr als eigene Excel-Blaetter exportiert.

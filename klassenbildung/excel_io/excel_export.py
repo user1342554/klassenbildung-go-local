@@ -32,11 +32,16 @@ from klassenbildung.core.models import (
 from klassenbildung.core.normalization import normalize_class_id
 from klassenbildung.core.settings import load_settings
 from klassenbildung.optimization.scoring import score_solution
+from klassenbildung.presentation.assignment_overview import (
+    assignment_overview_headers,
+    assignment_overview_records,
+)
 
 
 SELECTED_EXPORT_VARIANT = "Exportierte Klassenliste"
 SELECTED_EXPORT_KEY = "X"
 SELECTED_EXPORT_SOURCE = "exported_solution"
+ASSIGNMENT_OVERVIEW_SHEET_NAME = "Alle Klassen"
 LANGUAGE_PROFILE_MEANING = (
     "F/L im Klassenprofil bedeutet: F und L sind erlaubt; echte Zielmischung wird separat als Hinweis bewertet."
 )
@@ -108,8 +113,9 @@ def export_excel(
             basis.cell(row=student.row_number, column=1).value = class_id
 
     _replace_class_sheets(workbook, basis, students, assignments, class_configs)
+    _write_assignment_overview_sheet(workbook, students, assignments, class_configs)
     _trim_basis_after_students(basis, students)
-    _keep_only_basis_and_class_sheets(workbook, class_configs)
+    _keep_only_export_sheets(workbook, class_configs)
 
     output = py_io.BytesIO()
     workbook.save(output)
@@ -299,6 +305,30 @@ def _is_class_output_sheet_title(title: str, class_ids: set[str]) -> bool:
     return bool(re.match(r"^\s*\d+\s*[a-zA-Z](?:\s|$|[^a-zA-Z0-9])", title))
 
 
+def _write_assignment_overview_sheet(
+    workbook: Workbook,
+    students: list[Student],
+    assignments: dict[str, str],
+    class_configs: list[ClassConfig],
+) -> None:
+    if ASSIGNMENT_OVERVIEW_SHEET_NAME in workbook.sheetnames:
+        del workbook[ASSIGNMENT_OVERVIEW_SHEET_NAME]
+
+    insert_at = 1 if BASIS_SHEET_NAME in workbook.sheetnames else 0
+    sheet = workbook.create_sheet(ASSIGNMENT_OVERVIEW_SHEET_NAME, insert_at)
+    headers = assignment_overview_headers(students, assignments, class_configs)
+    sheet.append(headers)
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+
+    for record in assignment_overview_records(students, assignments, class_configs):
+        sheet.append([record.get(header, "") for header in headers])
+
+    for column_index in range(1, len(headers) + 1):
+        letter = sheet.cell(row=1, column=column_index).column_letter
+        sheet.column_dimensions[letter].width = 24
+
+
 def _trim_basis_after_students(basis, students: list[Student]) -> None:
     if not students:
         return
@@ -307,8 +337,8 @@ def _trim_basis_after_students(basis, students: list[Student]) -> None:
         basis.delete_rows(last_student_row + 1, basis.max_row - last_student_row)
 
 
-def _keep_only_basis_and_class_sheets(workbook: Workbook, class_configs: list[ClassConfig]) -> None:
-    allowed_titles = {BASIS_SHEET_NAME, *(config.class_id for config in class_configs)}
+def _keep_only_export_sheets(workbook: Workbook, class_configs: list[ClassConfig]) -> None:
+    allowed_titles = {BASIS_SHEET_NAME, ASSIGNMENT_OVERVIEW_SHEET_NAME, *(config.class_id for config in class_configs)}
     for title in list(workbook.sheetnames):
         if title not in allowed_titles:
             del workbook[title]
