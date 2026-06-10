@@ -17,8 +17,6 @@ installiert.
 
 ## Rechenweg auf einen Blick
 
-Der folgende Graph ist als fachliche Übersicht gedacht. Auf GitHub wird er als
-Pfeildiagramm angezeigt.
 
 ```mermaid
 flowchart TD
