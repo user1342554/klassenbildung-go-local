@@ -5,3 +5,37 @@ gatherUsageStats = false
 headless = true
 address = "localhost"
 port = 6767
+
+[theme]
+font = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+headingFont = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+codeFont = "'SF Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+baseFontSize = 15
+headingFontSizes = ["2.2rem", "1.55rem", "1.15rem", "1rem", "0.9rem", "0.8rem"]
+headingFontWeights = [600, 600, 600, 600, 600, 600]
+metricValueFontSize = "1.9rem"
+metricValueFontWeight = 500
+baseRadius = "0.7rem"
+buttonRadius = "980px"
+showWidgetBorder = true
+linkUnderline = false
+
+[theme.light]
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f5f7"
+textColor = "#1d1d1f"
+primaryColor = "#0071e3"
+borderColor = "#e3e3e6"
+linkColor = "#0071e3"
+codeBackgroundColor = "#f5f5f7"
+dataframeHeaderBackgroundColor = "#f5f5f7"
+
+[theme.dark]
+backgroundColor = "#1c1c1e"
+secondaryBackgroundColor = "#2c2c2e"
+textColor = "#f5f5f7"
+primaryColor = "#0a84ff"
+borderColor = "#3a3a3c"
+linkColor = "#409cff"
+codeBackgroundColor = "#2c2c2e"
+dataframeHeaderBackgroundColor = "#2c2c2e"

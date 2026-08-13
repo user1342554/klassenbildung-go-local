@@ -65,6 +65,7 @@ from klassenbildung.ui.tables import (
     messages_to_frame,
     score_to_class_frame,
 )
+from klassenbildung.ui.theme import apply_app_styles
 from klassenbildung.validation.validator import validate_students
 
 
@@ -89,6 +90,11 @@ def _reload_stale_project_modules() -> None:
     stale_assignment_overview = (
         not hasattr(assignment_overview_module, "assignment_overview_headers")
         or not hasattr(assignment_overview_module, "assignment_board_columns")
+        or not hasattr(assignment_overview_module, "assignment_profile_conflicts")
+        or "verified_profile_conflict_student_ids"
+        not in inspect.signature(
+            assignment_overview_module.assignment_board_columns
+        ).parameters
     )
     stale_progress = not hasattr(optimization_progress_module, "progress_event_message")
     stale_manual_rules = (
@@ -318,6 +324,7 @@ PREVIOUS_STRICT_MIX_DEFAULT_WEIGHTS = {
 
 
 def main() -> None:
+    apply_app_styles()
     st.title("Klassenbildung")
 
     _init_state()
@@ -895,7 +902,7 @@ def _friend_wish_frame(friend_stats: dict[str, int]) -> pd.DataFrame:
 def _upload_tab(settings: OptimizationSettings) -> None:
     st.subheader("Datei laden")
     if DUMMY_EXCEL_PATH.exists():
-        col_a, col_b = st.columns([1, 1])
+        col_a, col_b, _ = st.columns([1, 1, 3])
         if col_a.button("Testdatei laden"):
             result = import_excel(DUMMY_EXCEL_PATH.read_bytes(), filename=DUMMY_EXCEL_PATH.name)
             _set_import_result(result)
@@ -1252,9 +1259,15 @@ def _result_tab(settings: OptimizationSettings) -> None:
     else:
         edited_score = export_option.score_report
         edited_note_evaluation = export_option.note_evaluation
+    profile_conflicts = assignment_overview_module.assignment_profile_conflicts(
+        result.students,
+        edited_assignments,
+        st.session_state.class_configs,
+        reference_assignments=export_option.assignments,
+    )
     if manual_change_count:
         st.info(f"{manual_change_count} Kind(er) manuell verschoben. Der Excel-Download nutzt diese bearbeitete Liste.")
-    _render_manual_assignment_check(edited_assignments, edited_score)
+    _render_manual_assignment_check(edited_assignments, edited_score, profile_conflicts)
     export_option = replace(
         export_option,
         candidate_key=f"{export_option.candidate_key} manuell" if manual_change_count else export_option.candidate_key,
@@ -1294,6 +1307,7 @@ def _result_tab(settings: OptimizationSettings) -> None:
         data=export_bytes,
         file_name="Klassenbildung_Ergebnis.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary",
     )
     _render_technical_expander(
         replace(solver_result, assignments=export_option.assignments, score_report=export_option.score_report),
@@ -1422,6 +1436,18 @@ def _editable_export_assignments(
         base_assignments,
     )
 
+    verified_conflict_student_ids: set[str] = set()
+    if st.session_state.get("export_editor_check_hash") == _assignments_hash(current_assignments):
+        verified_conflicts = assignment_overview_module.assignment_profile_conflicts(
+            students,
+            current_assignments,
+            class_configs,
+            reference_assignments=base_assignments,
+        )
+        verified_conflict_student_ids = {
+            conflict["student_id"] for conflict in verified_conflicts
+        }
+
     st.subheader("Alle Klassen")
     if st.button("Zur berechneten Lösung zurücksetzen", key=f"export_editor_reset_{context_key}"):
         st.session_state.export_editor_assignments = dict(base_assignments)
@@ -1436,6 +1462,8 @@ def _editable_export_assignments(
         students,
         current_assignments,
         class_configs,
+        profile_reference_assignments=base_assignments,
+        verified_profile_conflict_student_ids=verified_conflict_student_ids,
     )
     board_value = ASSIGNMENT_BOARD_COMPONENT(
         columns=columns,
@@ -1458,11 +1486,17 @@ def _editable_export_assignments(
     return edited_assignments
 
 
-def _render_manual_assignment_check(assignments: dict[str, str], score) -> None:
+def _render_manual_assignment_check(
+    assignments: dict[str, str],
+    score,
+    profile_conflicts: list[dict[str, str]] | None = None,
+) -> None:
+    profile_conflicts = profile_conflicts or []
     assignments_hash = _assignments_hash(assignments)
     if st.button("Liste prüfen", key=f"export_editor_check_{assignments_hash}"):
         st.session_state.export_editor_check_hash = assignments_hash
         st.session_state.export_editor_check_violations = list(score.hard_violations)
+        st.rerun()
 
     if st.session_state.get("export_editor_check_hash") != assignments_hash:
         return
@@ -1472,6 +1506,13 @@ def _render_manual_assignment_check(assignments: dict[str, str], score) -> None:
         st.error("Die manuell bearbeitete Liste enthält harte Regelverletzungen.")
         with st.expander("Regelverletzungen anzeigen"):
             st.dataframe(pd.DataFrame({"Meldung": violations}), width="stretch", hide_index=True)
+    elif profile_conflicts:
+        st.warning(
+            "Keine sonstigen harten Regelverletzungen gefunden, aber die Liste enthält "
+            f"{len(profile_conflicts)} Profilkonflikt(e)."
+        )
+        for conflict in profile_conflicts:
+            st.write(f"⚠️ {conflict['message']}")
     else:
         st.success("Keine harten Regelverletzungen in der manuell bearbeiteten Liste.")
 

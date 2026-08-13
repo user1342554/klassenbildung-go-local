@@ -5,132 +5,208 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     :root {
-      --assignment-bg: #ffffff;
-      --assignment-header-bg: #f6f8fa;
-      --assignment-border: rgba(49, 51, 63, 0.2);
-      --assignment-text: #24292f;
-      --assignment-muted: #57606a;
-      --assignment-focus: #0969da;
-      --assignment-drop: #ddf4ff;
-      --assignment-font: "Source Sans Pro", sans-serif;
+      --assignment-header-bg: #f5f5f7;
+      --assignment-border: rgba(0, 0, 0, 0.08);
+      --assignment-border-strong: rgba(0, 0, 0, 0.13);
+      --assignment-text: #1d1d1f;
+      --assignment-muted: #86868b;
+      --assignment-focus: #0071e3;
+      --assignment-focus-soft: rgba(0, 113, 227, 0.08);
+      --assignment-drop: rgba(0, 113, 227, 0.1);
+      --assignment-note: rgba(214, 158, 0, 0.13);
+      --assignment-note-hover: rgba(214, 158, 0, 0.2);
+      --assignment-note-border: #c68a00;
+      --assignment-note-text: #6b4e00;
+      --assignment-note-on-strong: #2b1f00;
+      --assignment-glass-tint: rgba(255, 255, 255, 0.62);
+      --assignment-glass-border: rgba(255, 255, 255, 0.7);
+      --assignment-glass-chip: rgba(0, 0, 0, 0.05);
+      --assignment-card-surface: #ffffff;
+      --assignment-pane: #ffffff;
+      --assignment-pane-header: #f5f5f7;
+      --assignment-danger: #d0342c;
+      --assignment-danger-soft: rgba(208, 52, 44, 0.08);
+      --assignment-success: #1d7f4a;
+      --assignment-success-soft: rgba(29, 127, 74, 0.08);
+      --assignment-shadow: 0 18px 50px rgba(31, 38, 74, 0.14);
+      --assignment-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+      --assignment-radius: 14px;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     html,
     body {
       background: transparent;
       color: var(--assignment-text);
       font-family: var(--assignment-font);
+      -webkit-font-smoothing: antialiased;
       margin: 0;
       overflow: hidden;
       padding: 0;
     }
 
-    .assignment-wrap {
-      background: var(--assignment-bg);
-      border: 1px solid var(--assignment-border);
-      border-radius: 6px;
-      overflow-x: auto;
-      overflow-y: hidden;
-      padding: 0 0 1px;
-      width: 100%;
+    button { font-family: inherit; }
+
+    #root {
+      min-height: 1px;
+      position: relative;
     }
 
     .assignment-actions {
+      align-items: center;
       display: flex;
-      justify-content: flex-start;
-      margin-bottom: 8px;
-      min-height: 34px;
-      visibility: hidden;
+      gap: 16px;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      min-height: 32px;
     }
 
-    .assignment-actions.has-dirty {
-      visibility: visible;
+    .assignment-help {
+      align-items: center;
+      color: var(--assignment-muted);
+      display: flex;
+      flex-wrap: wrap;
+      font-size: 12.5px;
+      gap: 4px 14px;
+      line-height: 18px;
     }
 
-    .assignment-actions:empty {
-      margin-bottom: 0;
-      min-height: 0;
+    .assignment-help-main {
+      color: var(--assignment-muted);
+      font-weight: 400;
     }
+
+    .assignment-actions.has-dirty .assignment-help-main {
+      color: var(--assignment-text);
+    }
+
+    .assignment-legend {
+      align-items: center;
+      display: inline-flex;
+      gap: 12px;
+    }
+
+    .legend-item {
+      align-items: center;
+      display: inline-flex;
+      gap: 5px;
+      white-space: nowrap;
+    }
+
+    .legend-swatch {
+      border-radius: 2px;
+      display: inline-block;
+      height: 12px;
+      width: 3px;
+    }
+
+    .legend-swatch.note { background: var(--assignment-note-border); }
+    .legend-swatch.conflict { background: var(--assignment-danger); }
 
     .assignment-apply {
       appearance: none;
-      background: var(--assignment-bg);
-      border: 1px solid var(--assignment-border);
-      border-radius: 6px;
-      color: var(--assignment-text);
+      background: var(--assignment-focus);
+      border: 0;
+      border-radius: 980px;
+      color: #ffffff;
       cursor: pointer;
       display: inline-flex;
-      font: inherit;
+      flex: 0 0 auto;
       font-size: 13px;
+      font-weight: 500;
+      letter-spacing: -0.01em;
       line-height: 20px;
-      min-height: 34px;
-      padding: 6px 12px;
+      min-height: 30px;
+      opacity: 0;
+      padding: 5px 16px;
+      pointer-events: none;
+      transition: opacity 140ms ease, background-color 140ms ease;
     }
+
+    .assignment-actions.has-dirty .assignment-apply {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .assignment-apply:hover { background: #0077ed; }
 
     .assignment-apply:focus-visible {
       outline: 2px solid var(--assignment-focus);
       outline-offset: 2px;
     }
 
-    .assignment-apply:hover {
-      border-color: var(--assignment-focus);
-      color: var(--assignment-focus);
-    }
-
-    .assignment-table {
-      background: var(--assignment-bg);
-      display: grid;
-      min-width: 100%;
+    .assignment-wrap {
+      background: var(--assignment-border);
+      border: 1px solid var(--assignment-border-strong);
+      border-radius: var(--assignment-radius);
+      overflow: hidden;
       width: 100%;
     }
 
-    .assignment-header,
-    .assignment-cell {
-      border-bottom: 1px solid var(--assignment-border);
-      border-right: 1px solid var(--assignment-border);
+    .assignment-table {
+      align-items: stretch;
+      background: var(--assignment-border);
+      display: grid;
+      gap: 1px;
+      width: 100%;
+    }
+
+    .assignment-column {
+      background: var(--assignment-pane);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      transition: background-color 120ms ease, box-shadow 120ms ease;
     }
 
     .assignment-header {
-      align-items: flex-start;
-      background: var(--assignment-header-bg);
+      align-items: baseline;
+      background: var(--assignment-pane-header);
+      border-bottom: 1px solid var(--assignment-border);
       display: flex;
-      flex-direction: column;
-      justify-content: center;
-      min-height: 44px;
-      padding: 6px 9px;
+      gap: 8px;
+      justify-content: space-between;
+      padding: 11px 12px 10px;
       text-align: left;
     }
 
+    .assignment-column.is-drop-target {
+      background: var(--assignment-drop);
+      box-shadow: inset 0 0 0 2px var(--assignment-focus);
+    }
+
     .assignment-class-id {
-      font-size: 13px;
+      font-size: 15px;
       font-weight: 600;
-      line-height: 17px;
+      letter-spacing: -0.01em;
+      line-height: 20px;
+    }
+
+    .assignment-class-count {
+      color: var(--assignment-muted);
+      flex: 0 0 auto;
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+      line-height: 16px;
+      white-space: nowrap;
     }
 
     .assignment-class-type {
       color: var(--assignment-muted);
-      font-size: 12px;
-      font-weight: 400;
-      line-height: 16px;
-      margin-top: 2px;
+      font-size: 11.5px;
+      line-height: 15px;
+      margin-top: 1px;
       overflow-wrap: anywhere;
     }
 
-    .assignment-cell {
-      background: var(--assignment-bg);
-      min-height: 34px;
+    .assignment-column-body {
+      background: transparent;
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-height: 44px;
       padding: 0;
-      transition: background-color 100ms ease, outline-color 100ms ease;
-    }
-
-    .assignment-cell.is-drop-target {
-      background: var(--assignment-drop);
-      outline: 2px solid var(--assignment-focus);
-      outline-offset: -2px;
     }
 
     .assignment-student {
@@ -138,37 +214,421 @@
       appearance: none;
       background: transparent;
       border: 0;
-      border-radius: 0;
+      border-top: 1px solid var(--assignment-border);
       color: var(--assignment-text);
       cursor: grab;
       display: flex;
-      font: inherit;
-      font-size: 13px;
-      justify-content: flex-start;
+      font-size: 13.5px;
+      gap: 8px;
+      justify-content: space-between;
       line-height: 18px;
       margin: 0;
       min-height: 34px;
-      overflow-wrap: anywhere;
-      padding: 6px 9px;
+      padding: 6px 10px 6px 12px;
+      position: relative;
       text-align: left;
+      touch-action: manipulation;
+      transition: background-color 100ms ease;
+      user-select: none;
       width: 100%;
     }
 
-    .assignment-student:active {
-      cursor: grabbing;
-    }
+    .assignment-student:first-child { border-top: 0; }
+    .assignment-student:hover { background: var(--assignment-focus-soft); }
+    .assignment-student:active { cursor: grabbing; }
 
     .assignment-student:focus-visible {
       outline: 2px solid var(--assignment-focus);
       outline-offset: -2px;
     }
 
-    .assignment-student.is-dragging {
-      opacity: 0.42;
+    .assignment-student.is-selected {
+      background: var(--assignment-focus-soft);
+      box-shadow: inset 0 0 0 1px var(--assignment-focus);
+    }
+
+    /* A note is the one thing a teacher must not scroll past, so the whole row is
+       tinted and carries a marker bar instead of a small dot. */
+    .assignment-student.has-note {
+      background: var(--assignment-note);
+      font-weight: 500;
+    }
+
+    .assignment-student.has-note::before,
+    .assignment-student.has-profile-conflict::before {
+      background: var(--assignment-note-border);
+      bottom: 0;
+      content: "";
+      left: 0;
+      position: absolute;
+      top: 0;
+      width: 3px;
+    }
+
+    .assignment-student.has-note:hover { background: var(--assignment-note-hover); }
+    .assignment-student.has-note .student-label { color: var(--assignment-note-text); }
+
+    .assignment-student.has-profile-conflict {
+      background: var(--assignment-danger-soft);
+      font-weight: 500;
+    }
+
+    .assignment-student.has-profile-conflict::before { background: var(--assignment-danger); }
+    .assignment-student.has-profile-conflict .student-label { color: var(--assignment-danger); }
+
+    .assignment-student.is-dragging { opacity: 0.4; }
+
+    .student-label {
+      flex: 1 1 auto;
+      font-weight: 400;
+      letter-spacing: -0.005em;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .student-meta {
+      align-items: center;
+      display: flex;
+      flex: 0 0 auto;
+      gap: 3px;
+    }
+
+    .student-profile,
+    .student-badge {
+      align-items: center;
+      border-radius: 5px;
+      display: inline-flex;
+      flex: 0 0 auto;
+      font-size: 10px;
+      font-weight: 600;
+      height: 17px;
+      justify-content: center;
+      letter-spacing: 0.01em;
+      line-height: 17px;
+      min-width: 17px;
+      padding: 0 4px;
+    }
+
+    .student-profile.language-f { background: rgba(0, 113, 227, 0.12); color: #0059b3; }
+    .student-profile.language-l { background: rgba(120, 88, 214, 0.14); color: #5b3fbb; }
+    .student-profile.music-b { background: rgba(0, 150, 168, 0.14); color: #056b78; }
+    .student-profile.music-s { background: rgba(214, 122, 0, 0.14); color: #8f5100; }
+    .student-profile.music-g { background: rgba(204, 45, 122, 0.13); color: #97205a; }
+    .student-profile.music-reg { background: rgba(0, 0, 0, 0.05); color: var(--assignment-muted); }
+
+    .student-badge.note-badge {
+      background: var(--assignment-note-border);
+      color: var(--assignment-note-on-strong);
+    }
+
+    .student-badge.warning-badge {
+      background: var(--assignment-danger);
+      color: #ffffff;
     }
 
     .assignment-empty {
-      min-height: 34px;
+      align-items: center;
+      color: var(--assignment-muted);
+      display: flex;
+      font-size: 12px;
+      justify-content: center;
+      min-height: 44px;
+    }
+
+    /* One glass recipe: heavy blur over whatever sits behind, a flat translucent
+       tint and a hairline edge. No gradients - the color comes from the rows the
+       card happens to cover. */
+    .assignment-glass {
+      backdrop-filter: blur(30px) saturate(180%);
+      -webkit-backdrop-filter: blur(30px) saturate(180%);
+      background: var(--assignment-glass-tint);
+      border: 1px solid var(--assignment-glass-border);
+      box-shadow: var(--assignment-shadow);
+    }
+
+    .assignment-toast {
+      align-items: flex-start;
+      border-radius: 12px;
+      color: var(--assignment-text);
+      display: flex;
+      font-size: 13px;
+      gap: 10px;
+      line-height: 18px;
+      max-width: min(420px, calc(100% - 16px));
+      padding: 10px 12px;
+      position: absolute;
+      right: 0;
+      top: 38px;
+      z-index: 30;
+    }
+
+    .assignment-toast.warning { color: var(--assignment-danger); }
+
+    .toast-close,
+    .detail-close {
+      appearance: none;
+      background: transparent;
+      border: 0;
+      color: var(--assignment-muted);
+      cursor: pointer;
+      flex: 0 0 auto;
+      font-size: 17px;
+      line-height: 18px;
+      padding: 0 2px;
+    }
+
+    .toast-close:hover,
+    .detail-close:hover { color: var(--assignment-text); }
+
+    /* Solid, not frosted: the card covers the class list it is read against. */
+    .student-details-panel {
+      background: var(--assignment-card-surface);
+      border: 1px solid var(--assignment-border-strong);
+      border-radius: 18px;
+      box-shadow: var(--assignment-shadow);
+      display: flex;
+      flex-direction: column;
+      max-height: 520px;
+      overflow: hidden;
+      position: absolute;
+      width: 420px;
+      z-index: 40;
+    }
+
+    .popover-head {
+      align-items: flex-start;
+      display: flex;
+      flex: 0 0 auto;
+      gap: 8px;
+      justify-content: space-between;
+      padding: 14px 16px 10px;
+    }
+
+    .popover-title {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+      line-height: 22px;
+    }
+
+    .popover-subtitle {
+      color: var(--assignment-muted);
+      font-size: 12.5px;
+      line-height: 17px;
+      margin-top: 2px;
+    }
+
+    .detail-close {
+      align-items: center;
+      border-radius: 50%;
+      display: inline-flex;
+      font-size: 18px;
+      height: 26px;
+      justify-content: center;
+      margin: -2px -4px 0 0;
+      width: 26px;
+    }
+
+    .detail-close:hover { background: var(--assignment-focus-soft); }
+
+    .popover-body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: 0 16px;
+    }
+
+    .student-note {
+      background: var(--assignment-note);
+      border-left: 3px solid var(--assignment-note-border);
+      border-radius: 4px 10px 10px 4px;
+      color: var(--assignment-note-text);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 19px;
+      margin: 0 0 12px;
+      padding: 10px 12px;
+    }
+
+    .student-note-label {
+      display: block;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      line-height: 14px;
+      margin-bottom: 3px;
+      opacity: 0.8;
+      text-transform: uppercase;
+    }
+
+    .detail-facts {
+      display: grid;
+      gap: 8px 14px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin-bottom: 12px;
+    }
+
+    .detail-facts .detail-field {
+      border-top: 0;
+      display: block;
+      padding: 0;
+    }
+
+    .detail-facts .detail-label {
+      display: block;
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      line-height: 14px;
+      text-transform: uppercase;
+    }
+
+    .detail-facts .detail-value {
+      display: block;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .detail-more {
+      border-top: 1px solid var(--assignment-border);
+      padding-bottom: 4px;
+    }
+
+    .detail-more > summary {
+      color: var(--assignment-muted);
+      cursor: pointer;
+      font-size: 12px;
+      list-style: none;
+      padding: 9px 0;
+    }
+
+    .detail-more > summary::-webkit-details-marker { display: none; }
+    .detail-more > summary::after { content: " ›"; display: inline-block; transition: transform 120ms ease; }
+    .detail-more[open] > summary::after { transform: rotate(90deg); }
+    .detail-more > summary:hover { color: var(--assignment-text); }
+
+    .detail-groups {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: 1fr;
+      padding: 0 0 8px;
+    }
+
+    .detail-group { min-width: 0; }
+
+    .detail-group-title {
+      color: var(--assignment-muted);
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      line-height: 14px;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+    }
+
+    .detail-field {
+      align-items: baseline;
+      border-top: 1px solid var(--assignment-border);
+      color: var(--assignment-text);
+      display: grid;
+      font-size: 12.5px;
+      gap: 10px;
+      grid-template-columns: minmax(96px, 0.9fr) minmax(0, 1.1fr);
+      line-height: 18px;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      padding: 5px 0;
+    }
+
+    .detail-label { color: var(--assignment-muted); }
+
+    .detail-value {
+      min-width: 0;
+      text-align: right;
+    }
+
+    .student-context {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr;
+      padding: 0 0 12px;
+    }
+
+    .friend-summary {
+      font-size: 12.5px;
+      line-height: 18px;
+      margin: 0;
+    }
+
+    .friend-title {
+      color: var(--assignment-muted);
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+    }
+
+    .friend-wish {
+      border-radius: 8px;
+      margin-top: 4px;
+      padding: 5px 9px;
+    }
+
+    .friend-wish.fulfilled {
+      background: var(--assignment-success-soft);
+      color: var(--assignment-success);
+    }
+
+    .friend-wish.unfulfilled {
+      background: var(--assignment-danger-soft);
+      color: var(--assignment-danger);
+    }
+
+    .friend-wish.unresolved {
+      background: var(--assignment-header-bg);
+      color: var(--assignment-muted);
+    }
+
+    .move-actions {
+      align-items: center;
+      border-top: 1px solid var(--assignment-border);
+      display: flex;
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0;
+      padding: 12px 16px;
+    }
+
+    .move-label {
+      color: var(--assignment-muted);
+      font-size: 12px;
+      margin-right: 2px;
+    }
+
+    .move-button {
+      appearance: none;
+      background: var(--assignment-glass-chip);
+      border: 0;
+      border-radius: 980px;
+      color: var(--assignment-text);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      min-height: 26px;
+      padding: 3px 11px;
+      transition: background-color 120ms ease;
+    }
+
+    .move-button:hover { background: var(--assignment-focus-soft); }
+
+    .move-button.has-warning { color: var(--assignment-danger); }
+
+    @media (max-width: 900px) {
+      .student-details-panel { width: min(420px, calc(100% - 16px)); }
     }
   </style>
 </head>
@@ -179,13 +639,20 @@
     const RENDER_EVENT = "streamlit:render";
     const SET_COMPONENT_VALUE = "streamlit:setComponentValue";
     const SET_FRAME_HEIGHT = "streamlit:setFrameHeight";
+    const POPOVER_WIDTH = 420;
+    const POPOVER_GAP = 8;
 
     const state = {
       columns: [],
       disabled: false,
       draggingStudentId: null,
+      selectedStudentId: null,
       dirty: false,
+      feedback: null,
+      ignoreClickUntil: 0,
     };
+
+    let lastSentHeight = -1;
 
     function sendMessage(type, payload) {
       window.parent.postMessage(
@@ -199,10 +666,29 @@
     }
 
     function setFrameHeight() {
-      window.requestAnimationFrame(() => {
-        const height = Math.ceil(document.documentElement.scrollHeight);
-        sendMessage(SET_FRAME_HEIGHT, { height });
-      });
+      const height = Math.ceil(document.documentElement.scrollHeight);
+      if (height < 1 || height === lastSentHeight) return;
+      lastSentHeight = height;
+      sendMessage(SET_FRAME_HEIGHT, { height });
+    }
+
+    function scheduleFrameHeight() {
+      // Timers instead of requestAnimationFrame: Streamlit starts the iframe at zero
+      // height and renders inactive tabs hidden, and a frame without a layout box gets
+      // no animation frames. The board would report no height and stay invisible.
+      setFrameHeight();
+      setTimeout(setFrameHeight, 0);
+      setTimeout(setFrameHeight, 120);
+    }
+
+    function watchFrameSize() {
+      // The board is measured again once the browser gives the frame a real box,
+      // for example when its Streamlit tab becomes visible for the first time.
+      if (typeof ResizeObserver === "function") {
+        new ResizeObserver(setFrameHeight).observe(document.documentElement);
+      }
+      window.addEventListener("resize", setFrameHeight);
+      setInterval(setFrameHeight, 500);
     }
 
     function setComponentValue() {
@@ -213,79 +699,199 @@
     }
 
     function normalizeColumns(columns) {
-      if (!Array.isArray(columns)) {
-        return [];
-      }
+      if (!Array.isArray(columns)) return [];
       return columns.map((column) => ({
         class_id: String(column.class_id || ""),
         class_type: String(column.class_type || ""),
+        languages_allowed: Array.isArray(column.languages_allowed)
+          ? column.languages_allowed.map(String)
+          : [],
+        language_profile_source: String(column.language_profile_source || ""),
+        music_allowed: Array.isArray(column.music_allowed)
+          ? column.music_allowed.map(String)
+          : [],
         students: Array.isArray(column.students)
-          ? column.students
-              .map((student) => ({
-                id: String(student.id || ""),
-                label: String(student.label || student.id || ""),
-              }))
-              .filter((student) => student.id)
+          ? column.students.map(normalizeStudent).filter((student) => student.id)
           : [],
       }));
     }
 
+    function normalizeStudent(student) {
+      return {
+        id: String(student.id || ""),
+        label: String(student.label || student.id || ""),
+        has_note: Boolean(student.has_note),
+        note: String(student.note || ""),
+        second_language: String(student.second_language || ""),
+        music_profile: String(student.music_profile || ""),
+        profile_conflict_verified: Boolean(student.profile_conflict_verified),
+        details: Array.isArray(student.details)
+          ? student.details.map((field) => ({
+              label: String(field.label || ""),
+              value: String(field.value || ""),
+            }))
+          : [],
+        friend_wishes: Array.isArray(student.friend_wishes)
+          ? student.friend_wishes.map((wish) => ({
+              priority: Number(wish.priority || 0),
+              reference: String(wish.reference || ""),
+              friend_id: String(wish.friend_id || ""),
+              label: String(wish.label || wish.reference || ""),
+            }))
+          : [],
+      };
+    }
+
     function applyTheme(theme) {
-      if (!theme) {
-        return;
-      }
+      if (!theme) return;
       const root = document.documentElement;
-      const darkTheme = isDarkColor(theme.backgroundColor);
-      if (theme.backgroundColor) {
-        root.style.setProperty("--assignment-bg", theme.backgroundColor);
-      }
+      const dark = isDarkColor(theme.backgroundColor);
       if (theme.secondaryBackgroundColor) {
         root.style.setProperty("--assignment-header-bg", theme.secondaryBackgroundColor);
       }
+      if (theme.textColor) root.style.setProperty("--assignment-text", theme.textColor);
+      root.style.setProperty("--assignment-font", appFontFamily(theme.font));
+      if (theme.primaryColor) {
+        root.style.setProperty("--assignment-focus", theme.primaryColor);
+        root.style.setProperty("--assignment-focus-soft", withAlpha(theme.primaryColor, dark ? 0.16 : 0.08));
+        root.style.setProperty("--assignment-drop", withAlpha(theme.primaryColor, dark ? 0.22 : 0.12));
+      }
       root.style.setProperty(
         "--assignment-border",
-        darkTheme ? "rgba(250, 250, 250, 0.16)" : "rgba(49, 51, 63, 0.2)",
+        dark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.08)",
+      );
+      root.style.setProperty(
+        "--assignment-border-strong",
+        dark ? "rgba(255, 255, 255, 0.16)" : "rgba(0, 0, 0, 0.13)",
       );
       root.style.setProperty(
         "--assignment-muted",
-        darkTheme ? "rgba(250, 250, 250, 0.55)" : "rgba(49, 51, 63, 0.65)",
+        dark ? "rgba(255, 255, 255, 0.55)" : "#86868b",
       );
-      if (theme.textColor) {
-        root.style.setProperty("--assignment-text", theme.textColor);
+      root.style.setProperty(
+        "--assignment-glass-tint",
+        dark ? "rgba(44, 44, 46, 0.7)" : "rgba(255, 255, 255, 0.62)",
+      );
+      root.style.setProperty(
+        "--assignment-glass-border",
+        dark ? "rgba(255, 255, 255, 0.14)" : "rgba(255, 255, 255, 0.7)",
+      );
+      root.style.setProperty(
+        "--assignment-glass-chip",
+        dark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)",
+      );
+      if (theme.backgroundColor) {
+        root.style.setProperty("--assignment-pane", theme.backgroundColor);
       }
-      if (theme.primaryColor) {
-        root.style.setProperty("--assignment-focus", theme.primaryColor);
-        root.style.setProperty(
-          "--assignment-drop",
-          darkTheme ? withAlpha(theme.primaryColor, 0.18) : withAlpha(theme.primaryColor, 0.12),
-        );
+      // In dark mode the card lifts off the list; in light mode the list is already
+      // white, so the border and shadow carry the separation.
+      root.style.setProperty(
+        "--assignment-card-surface",
+        dark ? "#2c2c2e" : theme.backgroundColor || "#ffffff",
+      );
+      root.style.setProperty(
+        "--assignment-pane-header",
+        theme.secondaryBackgroundColor || (dark ? "#2c2c2e" : "#f5f5f7"),
+      );
+      root.style.setProperty(
+        "--assignment-note",
+        dark ? "rgba(229, 169, 60, 0.16)" : "rgba(214, 158, 0, 0.13)",
+      );
+      root.style.setProperty(
+        "--assignment-note-hover",
+        dark ? "rgba(229, 169, 60, 0.24)" : "rgba(214, 158, 0, 0.2)",
+      );
+      root.style.setProperty("--assignment-note-border", dark ? "#e5a93c" : "#c68a00");
+      root.style.setProperty("--assignment-note-text", dark ? "#f6d79a" : "#6b4e00");
+      root.style.setProperty("--assignment-note-on-strong", "#2b1f00");
+      root.style.setProperty("--assignment-danger", dark ? "#ff6961" : "#d0342c");
+      root.style.setProperty(
+        "--assignment-danger-soft",
+        dark ? "rgba(255, 105, 97, 0.16)" : "rgba(208, 52, 44, 0.08)",
+      );
+      root.style.setProperty("--assignment-success", dark ? "#4cd97b" : "#1d7f4a");
+      root.style.setProperty(
+        "--assignment-success-soft",
+        dark ? "rgba(76, 217, 123, 0.16)" : "rgba(29, 127, 74, 0.08)",
+      );
+      root.style.setProperty(
+        "--assignment-shadow",
+        dark ? "0 18px 50px rgba(0, 0, 0, 0.5)" : "0 18px 50px rgba(31, 38, 74, 0.14)",
+      );
+    }
+
+    function appFontFamily(themeFont) {
+      try {
+        const parentFont = window.parent.getComputedStyle(window.parent.document.body).fontFamily;
+        if (parentFont) {
+          installParentFontFaces(parentFont);
+          return parentFont;
+        }
+      } catch (_) {
+        // Cross-origin component frames cannot inspect the parent. The theme fallback below
+        // still maps Streamlit's generic name to the same system font stack.
       }
-      if (theme.font) {
-        root.style.setProperty("--assignment-font", theme.font);
+      const normalized = String(themeFont || "").trim().toLowerCase();
+      if (!normalized || normalized === "sans serif" || normalized === "sans-serif") {
+        return '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif';
       }
+      return themeFont;
+    }
+
+    function installParentFontFaces(fontFamily) {
+      if (document.getElementById("assignment-parent-fonts")) return;
+      const wantedFamilies = fontFamily
+        .split(",")
+        .map((value) => value.trim().replace(/^['"]|['"]$/g, "").toLowerCase())
+        .filter((value) => value && !["serif", "sans-serif", "monospace"].includes(value));
+      if (!wantedFamilies.length) return;
+      const fontRules = [];
+      for (const sheet of window.parent.document.styleSheets) {
+        let rules;
+        try {
+          rules = sheet.cssRules || [];
+        } catch (_) {
+          continue;
+        }
+        for (const rule of rules) {
+          if (rule.type !== CSSRule.FONT_FACE_RULE) continue;
+          const ruleFamily = String(rule.style.getPropertyValue("font-family") || "")
+            .trim()
+            .replace(/^['"]|['"]$/g, "")
+            .toLowerCase();
+          if (!wantedFamilies.includes(ruleFamily)) continue;
+          const baseUrl = sheet.href || window.parent.location.href;
+          fontRules.push(
+            rule.cssText.replace(/url\((['"]?)(.*?)\1\)/g, (_, _quote, value) => {
+              try {
+                return `url("${new URL(value, baseUrl).href}")`;
+              } catch (_) {
+                return `url("${value}")`;
+              }
+            }),
+          );
+        }
+      }
+      if (!fontRules.length) return;
+      const style = document.createElement("style");
+      style.id = "assignment-parent-fonts";
+      style.textContent = fontRules.join("\n");
+      document.head.appendChild(style);
     }
 
     function isDarkColor(color) {
       const rgb = parseColor(color);
-      if (!rgb) {
-        return false;
-      }
-      const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
-      return luminance < 0.45;
+      if (!rgb) return false;
+      return (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255 < 0.45;
     }
 
     function withAlpha(color, alpha) {
       const rgb = parseColor(color);
-      if (!rgb) {
-        return color;
-      }
-      return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+      return rgb ? `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})` : color;
     }
 
     function parseColor(color) {
-      if (!color || typeof color !== "string") {
-        return null;
-      }
+      if (!color || typeof color !== "string") return null;
       const hex = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
       if (hex) {
         const value = hex[1].length === 3
@@ -298,116 +904,452 @@
         };
       }
       const rgb = color.trim().match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-      if (rgb) {
-        return { r: Number(rgb[1]), g: Number(rgb[2]), b: Number(rgb[3]) };
-      }
-      return null;
+      return rgb ? { r: Number(rgb[1]), g: Number(rgb[2]), b: Number(rgb[3]) } : null;
     }
 
-    function render(updateHeight = true) {
+    function render() {
       const root = document.getElementById("root");
       root.textContent = "";
+      root.style.minHeight = "";
       root.appendChild(createActions());
+      if (state.feedback) root.appendChild(createToast());
+
       const wrap = document.createElement("div");
       wrap.className = "assignment-wrap";
-
       const table = document.createElement("div");
       table.className = "assignment-table";
       const classCount = Math.max(state.columns.length, 1);
-      table.style.gridTemplateColumns = `repeat(${classCount}, minmax(132px, 1fr))`;
-      table.style.minWidth = `${classCount * 132}px`;
+      table.style.gridTemplateColumns = `repeat(${classCount}, minmax(0, 1fr))`;
       wrap.appendChild(table);
 
-      state.columns.forEach((column) => {
-        table.appendChild(createHeader(column));
-      });
-
-      const maxRows = Math.max(1, ...state.columns.map((column) => column.students.length + 1));
-      for (let rowIndex = 0; rowIndex < maxRows; rowIndex += 1) {
-        state.columns.forEach((column) => {
-          table.appendChild(createCell(column, rowIndex));
-        });
-      }
-
+      state.columns.forEach((column) => table.appendChild(createColumn(column)));
       root.appendChild(wrap);
-      if (updateHeight) {
-        setFrameHeight();
+
+      if (state.selectedStudentId && findStudent(state.selectedStudentId)) {
+        const panel = createStudentDetails(state.selectedStudentId);
+        root.appendChild(panel);
+        placeStudentDetails(panel, root, wrap);
       }
+      scheduleFrameHeight();
     }
 
     function createActions() {
       const actions = document.createElement("div");
-      actions.className = state.dirty
-        ? "assignment-actions has-dirty"
-        : "assignment-actions";
-
-      const applyButton = document.createElement("button");
-      applyButton.className = "assignment-apply";
-      applyButton.type = "button";
-      applyButton.textContent = "Änderungen übernehmen";
-      applyButton.disabled = state.disabled || !state.dirty;
-      applyButton.addEventListener("click", () => {
+      actions.className = state.dirty ? "assignment-actions has-dirty" : "assignment-actions";
+      const help = document.createElement("div");
+      help.className = "assignment-help";
+      const helpMain = document.createElement("span");
+      helpMain.className = "assignment-help-main";
+      helpMain.textContent = state.dirty
+        ? "Änderungen sind vorgemerkt – weitere Kinder können ohne Neuladen verschoben werden."
+        : "Ziehen oder anklicken; die App lädt erst beim Übernehmen neu.";
+      const legend = document.createElement("span");
+      legend.className = "assignment-legend";
+      legend.append(
+        createLegendItem("note", "Anmerkung"),
+        createLegendItem("conflict", "Profilkonflikt nach Prüfung"),
+      );
+      help.append(helpMain, legend);
+      const apply = document.createElement("button");
+      apply.className = "assignment-apply";
+      apply.type = "button";
+      apply.textContent = "Änderungen übernehmen";
+      apply.disabled = state.disabled || !state.dirty;
+      apply.addEventListener("click", () => {
         state.dirty = false;
         setComponentValue();
-        render(false);
+        render();
       });
-      actions.appendChild(applyButton);
+      actions.append(help, apply);
       return actions;
     }
 
-    function createHeader(column) {
+    function createLegendItem(kind, label) {
+      const item = document.createElement("span");
+      item.className = "legend-item";
+      const swatch = document.createElement("span");
+      swatch.className = `legend-swatch ${kind}`;
+      const text = document.createElement("span");
+      text.textContent = label;
+      item.append(swatch, text);
+      return item;
+    }
+
+    function createToast() {
+      const toast = document.createElement("div");
+      toast.className = `assignment-toast assignment-glass ${state.feedback.severity}`;
+      const text = document.createElement("span");
+      text.textContent = state.feedback.message;
+      const close = document.createElement("button");
+      close.className = "toast-close";
+      close.type = "button";
+      close.textContent = "×";
+      close.title = "Meldung schließen";
+      close.addEventListener("click", () => {
+        state.feedback = null;
+        render();
+      });
+      toast.append(text, close);
+      return toast;
+    }
+
+    function createColumn(column) {
+      const section = document.createElement("section");
+      section.className = "assignment-column";
+      section.dataset.dropClassId = column.class_id;
+      addDropListeners(section);
+
       const header = document.createElement("div");
       header.className = "assignment-header";
-
+      const identity = document.createElement("div");
       const classId = document.createElement("div");
       classId.className = "assignment-class-id";
       classId.textContent = column.class_id;
-      header.appendChild(classId);
-
       const classType = document.createElement("div");
       classType.className = "assignment-class-type";
       classType.textContent = column.class_type;
-      header.appendChild(classType);
+      identity.append(classId, classType);
+      const classCount = document.createElement("span");
+      classCount.className = "assignment-class-count";
+      classCount.textContent = `${column.students.length} Kinder`;
+      classCount.title = `${column.students.length} Kinder`;
+      header.append(identity, classCount);
 
-      return header;
-    }
-
-    function createCell(column, rowIndex) {
-      const cell = document.createElement("div");
-      cell.className = "assignment-cell";
-      cell.dataset.classId = column.class_id;
-      cell.dataset.rowIndex = String(rowIndex);
-      cell.addEventListener("dragover", onDragOver);
-      cell.addEventListener("dragenter", onDragEnter);
-      cell.addEventListener("dragleave", onDragLeave);
-      cell.addEventListener("drop", onDrop);
-
-      const student = column.students[rowIndex];
-      if (student) {
-        cell.appendChild(createStudent(student));
+      const body = document.createElement("div");
+      body.className = "assignment-column-body";
+      if (column.students.length) {
+        column.students.forEach((student) => body.appendChild(createStudent(student, column)));
       } else {
         const empty = document.createElement("div");
         empty.className = "assignment-empty";
-        cell.appendChild(empty);
+        empty.textContent = "Hier ablegen";
+        body.appendChild(empty);
       }
-      return cell;
+      section.append(header, body);
+      return section;
     }
 
-    function createStudent(student) {
+    function addDropListeners(element) {
+      element.addEventListener("dragover", onDragOver);
+      element.addEventListener("dragenter", onDragEnter);
+      element.addEventListener("dragleave", onDragLeave);
+      element.addEventListener("drop", onDrop);
+    }
+
+    function createStudent(student, column) {
       const button = document.createElement("button");
+      const conflicts = profileMessages(student, column);
       button.className = "assignment-student";
+      if (student.has_note) button.classList.add("has-note");
+      if (student.profile_conflict_verified && conflicts.length) {
+        button.classList.add("has-profile-conflict");
+      }
+      if (student.id === state.selectedStudentId) button.classList.add("is-selected");
+      if (student.id === state.draggingStudentId) button.classList.add("is-dragging");
       button.draggable = !state.disabled;
       button.type = "button";
-      button.textContent = student.label;
-      button.title = student.label;
       button.dataset.studentId = student.id;
-      button.setAttribute("aria-label", student.label);
+      button.title = student.profile_conflict_verified && conflicts.length
+        ? conflicts.join(" ")
+        : `${student.label} – Details anzeigen`;
+      const label = document.createElement("span");
+      label.className = "student-label";
+      label.textContent = student.label;
+      button.appendChild(label);
+      const meta = document.createElement("span");
+      meta.className = "student-meta";
+      if (student.second_language) {
+        meta.appendChild(
+          createProfileBadge(
+            student.second_language,
+            `language-${student.second_language.toLowerCase()}`,
+            `Fremdsprache ${student.second_language}`,
+          ),
+        );
+      }
+      if (student.music_profile) {
+        meta.appendChild(
+          createProfileBadge(
+            student.music_profile === "Reg" ? "R" : student.music_profile,
+            `music-${student.music_profile.toLowerCase()}`,
+            `Musikprofil ${student.music_profile}`,
+          ),
+        );
+      }
+      if (student.has_note) {
+        meta.appendChild(createBadge("!", "Anmerkung vorhanden", "note-badge"));
+      }
+      if (student.profile_conflict_verified && conflicts.length) {
+        meta.appendChild(createBadge("⚠", conflicts.join(" "), "warning-badge"));
+      }
+      button.appendChild(meta);
+      button.addEventListener("click", () => selectStudent(student.id));
       button.addEventListener("dragstart", onDragStart);
       button.addEventListener("dragend", onDragEnd);
-      if (student.id === state.draggingStudentId) {
-        button.classList.add("is-dragging");
-      }
       return button;
+    }
+
+    function createBadge(text, title, kind = "") {
+      const badge = document.createElement("span");
+      badge.className = `student-badge ${kind}`;
+      badge.textContent = text;
+      badge.title = title;
+      return badge;
+    }
+
+    function createProfileBadge(text, kind, title) {
+      const badge = document.createElement("span");
+      badge.className = `student-profile ${kind}`;
+      badge.textContent = text;
+      badge.title = title;
+      return badge;
+    }
+
+    function selectStudent(studentId) {
+      if (Date.now() < state.ignoreClickUntil) return;
+      state.selectedStudentId = state.selectedStudentId === studentId ? null : studentId;
+      render();
+    }
+
+    function createStudentDetails(studentId) {
+      const student = findStudent(studentId);
+      const currentClassId = classIdForStudent(studentId);
+      const panel = document.createElement("section");
+      panel.className = "student-details-panel";
+      panel.setAttribute("aria-label", `Details zu ${student.label}`);
+      const head = document.createElement("div");
+      head.className = "popover-head";
+      const identity = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "popover-title";
+      title.textContent = student.label;
+      const subtitle = document.createElement("div");
+      subtitle.className = "popover-subtitle";
+      subtitle.textContent = [
+        `Klasse ${currentClassId || "–"}`,
+        student.second_language ? `Fremdsprache ${student.second_language}` : "",
+        student.music_profile ? `Musik ${student.music_profile}` : "",
+      ].filter(Boolean).join(" · ");
+      identity.append(title, subtitle);
+      const close = document.createElement("button");
+      close.className = "detail-close";
+      close.type = "button";
+      close.textContent = "×";
+      close.title = "Details schließen";
+      close.addEventListener("click", () => {
+        state.selectedStudentId = null;
+        render();
+      });
+      head.append(identity, close);
+      panel.appendChild(head);
+
+      const body = document.createElement("div");
+      body.className = "popover-body";
+
+      if (student.has_note) {
+        const note = document.createElement("div");
+        note.className = "student-note";
+        const noteLabel = document.createElement("span");
+        noteLabel.className = "student-note-label";
+        noteLabel.textContent = "Anmerkung";
+        const noteText = document.createElement("span");
+        noteText.textContent = student.note;
+        note.append(noteLabel, noteText);
+        body.appendChild(note);
+      }
+
+      // Only the fields a teacher weighs while moving a child stay visible; the rest
+      // sit behind a disclosure so the card fits without scrolling.
+      const facts = document.createElement("div");
+      facts.className = "detail-facts";
+      const factLabels = ["Grundschule", "Grundschulklasse", "Eignung", "Geschlecht"];
+      const factFields = factLabels
+        .map((label) => student.details.find((field) => field.label === label))
+        .filter(Boolean);
+      factFields.forEach((field) => facts.appendChild(detailField(field.label, field.value)));
+      if (factFields.length) body.appendChild(facts);
+
+      const context = document.createElement("div");
+      context.className = "student-context";
+      context.appendChild(createFriendSummary(student, currentClassId));
+      body.appendChild(context);
+
+      const groups = document.createElement("div");
+      groups.className = "detail-groups";
+      const detailGroups = [
+        ["Schule und Zuordnung", [
+          "Schülernummer",
+          "Grundschule",
+          "Grundschulklasse",
+          "Bisherige Zielklasse",
+        ]],
+        ["Profil", ["Fremdsprache", "Musikprofil", "Eignung"]],
+        ["Persönliche Angaben", [
+          "Geschlecht",
+          "Geburtsdatum",
+          "Staatsangehörigkeit",
+          "Religion",
+          "R-/Unterstützungsmarkierung",
+        ]],
+      ];
+      const shownLabels = new Set(["Name"]);
+      detailGroups.forEach(([titleText, labels]) => {
+        const fields = student.details.filter((field) => labels.includes(field.label));
+        fields.forEach((field) => shownLabels.add(field.label));
+        if (fields.length) groups.appendChild(detailGroup(titleText, fields));
+      });
+      const remainingFields = student.details.filter((field) => !shownLabels.has(field.label));
+      if (remainingFields.length) groups.appendChild(detailGroup("Weitere Angaben", remainingFields));
+      if (groups.childElementCount) body.appendChild(createDetailDisclosure(groups));
+      panel.appendChild(body);
+
+      if (!state.disabled) panel.appendChild(createMoveActions(student, currentClassId));
+      return panel;
+    }
+
+    function createDetailDisclosure(groups) {
+      const disclosure = document.createElement("details");
+      disclosure.className = "detail-more";
+      const summary = document.createElement("summary");
+      summary.textContent = "Alle Angaben";
+      disclosure.append(summary, groups);
+      disclosure.addEventListener("toggle", () => {
+        const root = document.getElementById("root");
+        const wrap = root.querySelector(".assignment-wrap");
+        if (wrap) placeStudentDetails(disclosure.closest(".student-details-panel"), root, wrap);
+      });
+      return disclosure;
+    }
+
+    function placeStudentDetails(panel, root, wrap) {
+      const anchor = root.querySelector(
+        `.assignment-student[data-student-id="${cssEscape(state.selectedStudentId)}"]`,
+      );
+      const rootWidth = root.clientWidth || POPOVER_WIDTH;
+      const width = Math.min(POPOVER_WIDTH, Math.max(240, rootWidth - 16));
+      panel.style.width = `${width}px`;
+      if (!anchor) {
+        panel.style.left = `${Math.max(0, (rootWidth - width) / 2)}px`;
+        panel.style.top = `${wrap.offsetTop + 12}px`;
+        return;
+      }
+      const left = clamp(
+        anchor.offsetLeft + anchor.offsetWidth / 2 - width / 2,
+        0,
+        Math.max(0, rootWidth - width),
+      );
+      // Keep the card inside the board so opening it never changes the frame height,
+      // and inside the part of the board the reader can actually see.
+      const height = Math.min(panel.offsetHeight || 0, wrap.offsetHeight);
+      const band = visibleBand(wrap);
+      const anchorTop = anchor.offsetTop;
+      const below = anchorTop + anchor.offsetHeight + POPOVER_GAP;
+      const top = below + height <= band.bottom
+        ? below
+        : Math.max(band.top, anchorTop - height - POPOVER_GAP);
+      panel.style.left = `${left}px`;
+      panel.style.top = `${clamp(top, band.top, Math.max(band.top, band.bottom - height))}px`;
+    }
+
+    function visibleBand(wrap) {
+      const top = wrap.offsetTop;
+      const bottom = top + wrap.offsetHeight;
+      try {
+        // The board is taller than the browser window, so the frame reports which
+        // slice of it is on screen right now.
+        const frame = window.frameElement;
+        if (!frame) return { top, bottom };
+        const rect = frame.getBoundingClientRect();
+        const visible = {
+          top: Math.max(top, -rect.top + POPOVER_GAP),
+          bottom: Math.min(bottom, window.parent.innerHeight - rect.top - POPOVER_GAP),
+        };
+        return visible.bottom - visible.top >= 160 ? visible : { top, bottom };
+      } catch (_) {
+        // Cross-origin component frames cannot measure themselves in the page.
+        return { top, bottom };
+      }
+    }
+
+    function clamp(value, min, max) {
+      return Math.min(Math.max(value, min), max);
+    }
+
+    function cssEscape(value) {
+      return String(value).replace(/["\\]/g, "\\$&");
+    }
+
+    function detailGroup(titleText, fields) {
+      const group = document.createElement("section");
+      group.className = "detail-group";
+      const title = document.createElement("div");
+      title.className = "detail-group-title";
+      title.textContent = titleText;
+      group.appendChild(title);
+      fields.forEach((field) => group.appendChild(detailField(field.label, field.value)));
+      return group;
+    }
+
+    function detailField(label, value) {
+      const field = document.createElement("div");
+      field.className = "detail-field";
+      const key = document.createElement("span");
+      key.className = "detail-label";
+      key.textContent = label;
+      const text = document.createElement("span");
+      text.className = "detail-value";
+      text.textContent = value;
+      field.append(key, text);
+      return field;
+    }
+
+    function createFriendSummary(student, currentClassId) {
+      const summary = document.createElement("div");
+      summary.className = "friend-summary";
+      const fulfilledCount = student.friend_wishes.filter(
+        (wish) => wish.friend_id && classIdForStudent(wish.friend_id) === currentClassId,
+      ).length;
+      const title = document.createElement("div");
+      title.className = "friend-title";
+      title.textContent = student.friend_wishes.length
+        ? `Freundeswünsche erfüllt: ${fulfilledCount} von ${student.friend_wishes.length}`
+        : "Keine Freundeswünsche eingetragen";
+      summary.appendChild(title);
+      student.friend_wishes.forEach((wish) => {
+        const friendClassId = wish.friend_id ? classIdForStudent(wish.friend_id) : "";
+        const fulfilled = Boolean(friendClassId && friendClassId === currentClassId);
+        const line = document.createElement("div");
+        line.className = wish.friend_id
+          ? `friend-wish ${fulfilled ? "fulfilled" : "unfulfilled"}`
+          : "friend-wish unresolved";
+        const icon = wish.friend_id ? (fulfilled ? "✓" : "✗") : "?";
+        line.textContent = `${icon} Wunsch ${wish.priority}: ${wish.label}`
+          + (friendClassId ? ` · Klasse ${friendClassId}` : "");
+        summary.appendChild(line);
+      });
+      return summary;
+    }
+
+    function createMoveActions(student, currentClassId) {
+      const actions = document.createElement("div");
+      actions.className = "move-actions";
+      const label = document.createElement("span");
+      label.className = "move-label";
+      label.textContent = "Verschieben nach:";
+      actions.appendChild(label);
+      state.columns.forEach((column) => {
+        if (column.class_id === currentClassId) return;
+        const warnings = profileMessages(student, column);
+        const button = document.createElement("button");
+        button.className = "move-button";
+        if (warnings.length) button.classList.add("has-warning");
+        button.type = "button";
+        button.textContent = warnings.length ? `${column.class_id} ⚠` : column.class_id;
+        button.title = warnings.length ? warnings.join(" ") : `Nach ${column.class_id} verschieben`;
+        button.addEventListener("click", () => moveStudent(student.id, column.class_id));
+        actions.appendChild(button);
+      });
+      return actions;
     }
 
     function onDragStart(event) {
@@ -415,98 +1357,164 @@
         event.preventDefault();
         return;
       }
-      const studentId = event.currentTarget.dataset.studentId;
-      state.draggingStudentId = studentId;
+      state.draggingStudentId = event.currentTarget.dataset.studentId;
+      state.feedback = null;
       event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", studentId);
+      event.dataTransfer.setData("text/plain", state.draggingStudentId);
       event.currentTarget.classList.add("is-dragging");
     }
 
     function onDragEnd() {
       state.draggingStudentId = null;
+      state.ignoreClickUntil = Date.now() + 250;
       clearDropTargets();
-      render(false);
     }
 
     function onDragOver(event) {
-      if (!state.draggingStudentId) {
-        return;
-      }
+      const studentId = draggedStudentId(event);
+      if (!studentId) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
+      showDropTarget(event.currentTarget);
     }
 
     function onDragEnter(event) {
-      if (!state.draggingStudentId) {
-        return;
-      }
-      event.currentTarget.classList.add("is-drop-target");
+      if (!draggedStudentId(event)) return;
+      event.preventDefault();
+      showDropTarget(event.currentTarget);
     }
 
     function onDragLeave(event) {
-      if (!event.currentTarget.contains(event.relatedTarget)) {
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const outside = event.clientX <= bounds.left
+        || event.clientX >= bounds.right
+        || event.clientY <= bounds.top
+        || event.clientY >= bounds.bottom;
+      if (outside) {
         event.currentTarget.classList.remove("is-drop-target");
       }
     }
 
     function onDrop(event) {
-      if (!state.draggingStudentId) {
-        return;
-      }
+      const studentId = draggedStudentId(event);
+      if (!studentId) return;
       event.preventDefault();
-      const targetClassId = event.currentTarget.dataset.classId;
-      const targetIndex = Number(event.currentTarget.dataset.rowIndex || 0);
-      moveStudent(state.draggingStudentId, targetClassId, targetIndex);
+      event.stopPropagation();
+      const targetClassId = event.currentTarget.dataset.dropClassId;
       state.draggingStudentId = null;
+      state.ignoreClickUntil = Date.now() + 250;
       clearDropTargets();
-      render(false);
+      moveStudent(studentId, targetClassId);
     }
 
-    function moveStudent(studentId, targetClassId, targetIndex) {
+    function draggedStudentId(event) {
+      if (state.draggingStudentId) return state.draggingStudentId;
+      if (!event.dataTransfer) return "";
+      return event.dataTransfer.getData("text/plain") || "";
+    }
+
+    function showDropTarget(target) {
+      document.querySelectorAll(".assignment-column.is-drop-target").forEach((element) => {
+        if (element !== target) element.classList.remove("is-drop-target");
+      });
+      target.classList.add("is-drop-target");
+    }
+
+    function moveStudent(studentId, targetClassId) {
       const fromColumn = state.columns.find((column) =>
         column.students.some((student) => student.id === studentId),
       );
       const toColumn = state.columns.find((column) => column.class_id === targetClassId);
-      if (!fromColumn || !toColumn) {
-        return false;
-      }
-
+      if (!fromColumn || !toColumn) return false;
+      if (fromColumn === toColumn) return false;
       const fromIndex = fromColumn.students.findIndex((student) => student.id === studentId);
-      if (fromIndex < 0) {
-        return false;
-      }
+      if (fromIndex < 0) return false;
       const [student] = fromColumn.students.splice(fromIndex, 1);
-      let insertIndex = targetIndex;
-      if (fromColumn === toColumn && fromIndex < insertIndex) {
-        insertIndex -= 1;
+      student.profile_conflict_verified = false;
+      toColumn.students.push(student);
+      toColumn.students.sort((left, right) => left.label.localeCompare(right.label, "de"));
+      state.selectedStudentId = studentId;
+      state.dirty = true;
+      const warnings = profileMessages(student, toColumn);
+      state.feedback = warnings.length
+        ? { severity: "warning", message: `Verschiebung vorgemerkt: ${warnings.join(" ")}` }
+        : { severity: "success", message: `${student.label} → ${targetClassId} vorgemerkt.` };
+      render();
+      return true;
+    }
+
+    function profileMessages(student, column) {
+      const messages = [];
+      if (
+        column.languages_allowed.length
+        && !column.languages_allowed.includes(student.second_language)
+      ) {
+        const allowed = column.languages_allowed.join("/");
+        const profile = column.language_profile_source === "configured"
+          ? `erlaubt: ${allowed}`
+          : `bisheriges Sprachprofil: ${allowed}`;
+        messages.push(
+          `Sprache ${student.second_language || "leer"} passt nicht zu ${column.class_id} (${profile}).`,
+        );
       }
-      insertIndex = Math.max(0, Math.min(insertIndex, toColumn.students.length));
-      toColumn.students.splice(insertIndex, 0, student);
-      const changed = fromColumn !== toColumn || fromIndex !== insertIndex;
-      if (changed) {
-        state.dirty = true;
+      if (column.music_allowed.length && !column.music_allowed.includes(student.music_profile)) {
+        messages.push(
+          `Musikprofil ${student.music_profile || "leer"} passt nicht zu ${column.class_id} `
+          + `(erlaubt: ${column.music_allowed.join("/")}).`,
+        );
       }
-      return changed;
+      return messages;
+    }
+
+    function findStudent(studentId) {
+      for (const column of state.columns) {
+        const student = column.students.find((item) => item.id === studentId);
+        if (student) return student;
+      }
+      return null;
+    }
+
+    function classIdForStudent(studentId) {
+      const column = state.columns.find((item) =>
+        item.students.some((student) => student.id === studentId),
+      );
+      return column ? column.class_id : "";
     }
 
     function clearDropTargets() {
-      document.querySelectorAll(".assignment-cell.is-drop-target").forEach((cell) => {
-        cell.classList.remove("is-drop-target");
+      document.querySelectorAll(".is-drop-target").forEach((element) => {
+        element.classList.remove("is-drop-target");
       });
     }
 
+    document.addEventListener("click", (event) => {
+      if (!state.selectedStudentId) return;
+      if (event.target.closest(".student-details-panel, .assignment-student")) return;
+      state.selectedStudentId = null;
+      render();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || !state.selectedStudentId) return;
+      state.selectedStudentId = null;
+      render();
+    });
+
     window.addEventListener("message", (event) => {
       const data = event.data || {};
-      if (data.type !== RENDER_EVENT) {
-        return;
-      }
+      if (data.type !== RENDER_EVENT) return;
       applyTheme(data.theme);
       state.disabled = Boolean(data.disabled);
       state.columns = normalizeColumns((data.args || {}).columns);
       state.dirty = false;
+      state.feedback = null;
+      if (state.selectedStudentId && !findStudent(state.selectedStudentId)) {
+        state.selectedStudentId = null;
+      }
       render();
     });
 
+    watchFrameSize();
     setComponentReady();
   </script>
 </body>
