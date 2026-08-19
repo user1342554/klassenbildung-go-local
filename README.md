@@ -26,13 +26,26 @@ Unter [Releases](https://github.com/user1342554/klassenbildung-go-local/releases
 `Klassenbildung-macOS.zip`. Entpacken, `Klassenbildung.app` nach `/Programme` ziehen, fertig —
 Python muss dafuer **nicht** installiert sein.
 
-Die App ist **nicht signiert und nicht notarisiert**. macOS blockiert sie deshalb beim ersten
-Start. Einmalig entweder im Finder mit Rechtsklick → *Oeffnen* → *Oeffnen* bestaetigen, oder im
-Terminal die Quarantaene entfernen:
+Die App ist **nicht signiert und nicht notarisiert**. macOS zeigt deshalb beim ersten Start:
+
+> „Klassenbildung“ konnte nicht geöffnet werden. Apple kann nicht überprüfen, ob
+> „Klassenbildung“ frei von Malware ist …
+
+Das ist erwartet und kein Fehler der App. Zwei Wege:
+
+**Terminal (zuverlässig, empfohlen):**
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Klassenbildung.app
 ```
+
+Danach startet die App normal per Doppelklick.
+
+**Systemeinstellungen (ab macOS 13):** App doppelklicken, Meldung mit *Fertig* schließen, dann
+*Systemeinstellungen* → *Datenschutz & Sicherheit* → nach unten scrollen → bei
+„Klassenbildung wurde blockiert…“ auf *Dennoch öffnen* klicken.
+
+> Der frühere Weg „Rechtsklick → Öffnen“ funktioniert ab macOS 15 (Sequoia) nicht mehr.
 
 Einstellungen und Klassenprofile werden unter
 `~/Library/Application Support/Klassenbildung/` gespeichert.
