@@ -1,123 +1,127 @@
-# Schulablauf: Klassenbildung pruefen und bearbeiten
+# Schulablauf: Klassenbildung prüfen und bearbeiten
 
-Diese Anleitung beschreibt den normalen Arbeitsablauf fuer die Schule. Technische Solverdetails gehoeren in den Expertenmodus und sind fuer diesen Ablauf nicht noetig.
+Diese Anleitung beschreibt den normalen Arbeitsablauf für die Schule. Technische
+Solverdetails stehen im Expertenmodus und sind für diesen Ablauf nicht nötig.
 
-## 1. Datei laden
+Die App hat vier Schritte, die den vier Reitern entsprechen:
 
-Oeffne die App und lade die Schuelerliste hoch. Wenn sich die Schuelerdaten seit dem letzten Lauf geaendert haben, setzt die App manuelle Regeln zurueck. Das verhindert, dass alte Entscheidungen auf neue Daten angewendet werden.
+1. Excel prüfen
+2. Einstellungen
+3. Berechnen
+4. Ergebnis
 
-## 2. Profile und Bemerkungen pruefen
+## 1. Excel prüfen
 
-Die App arbeitet ohne feste Klassenprofile. Musik- und Sprachverteilung werden
-von der Berechnung entschieden; Klassennamen wie 5a oder 5e erzwingen keine
-vorgegebene S-, B-, G-, F- oder L-Klasse.
+Lade die Schülerliste hoch und klicke auf `Datei prüfen`. Die App liest das Blatt
+`Basis` und zeigt danach einen Dateiüberblick, die Freundeswünsche und die
+Verteilungen nach Sprache, Geschlecht und Musikprofil.
 
-Reg bedeutet dabei einen neutralen Fueller. Die Musik-Mischklassen-Kennzahl
-zaehlt nur Mischungen zwischen B, S und G; Reg ist keine zweite Profilgruppe.
+Blockierende Fehler, zum Beispiel eine fehlende Schülernummer oder ein
+mehrdeutiger Freundeseintrag, werden hier rot angezeigt. Solange sie bestehen,
+lässt sich in Schritt 3 nichts berechnen. Nicht kritische Warnungen stehen in
+einem eigenen Aufklappbereich.
 
-Pruefe danach die Bemerkungen. Eindeutige Hinweise werden vorbefuellt, zum
-Beispiel:
+Wenn sich die Schülerdaten seit dem letzten Lauf geändert haben, setzt die App
+manuelle Regeln zurück. Das verhindert, dass alte Entscheidungen auf neue Daten
+angewendet werden.
 
-- nur 5e moeglich -> Klassenfixierung
-- nicht mit Nr. 23 -> Trennregel
-- mit Nr. 23 zusammen -> Zusammenregel
+## 2. Einstellungen
 
-Unklare Hinweise wie "nicht mit Schwester" muessen bewusst geklaert werden,
-weil die App den zweiten Schueler nicht erraten soll.
+Hier legst du den Klassenrahmen fest: Anzahl Klassen, Wunschgröße und den harten
+Spielraum. Die Klassengröße ist standardmäßig hart auf 28-32 Kinder begrenzt,
+29-31 ist der bevorzugte Zielbereich ohne Zusatzstrafe.
 
-Die V18-Freigabegrenzen werden dokumentiert: gleiche Grundschule hoechstens 10 Kinder je
-Klasse, gleiche Grundschule plus alte Klasse hoechstens 6 Kinder je Klasse, und
-R-/Unterstuetzungsmarkierungen hoechstens 4 je Klasse. Wird eine Grenze
-ueberschritten, zeigt die App den Befund im Ergebnis und im Export.
-Die Klassengroesse ist standardmaessig hart auf 28-32 Kinder begrenzt; 29-31
-ist der bevorzugte Zielbereich.
+Die App arbeitet ohne feste Klassenprofile. Musik- und Sprachverteilung
+entscheidet die Berechnung; Klassennamen wie 5a oder 5e erzwingen keine
+vorgegebene S-, B-, G-, F- oder L-Klasse. `Reg` ist dabei ein neutraler Füller:
+Die Musik-Mischklassen-Kennzahl zählt nur Mischungen zwischen B, S und G.
 
-## 3. Ergebnis berechnen
+Darunter stehen die Gewichtungen. Sie steuern, wie stark einzelne Ziele
+gegeneinander abgewogen werden. `Empfohlene Gewichtungen laden` stellt die
+Standardwerte wieder her.
 
-Starte die Berechnung. Die Standardansicht zeigt danach, ob die strenge Profilvariante brauchbar ist und welche beste Loesung verwendet werden soll.
+Unter `Weitere Gewichtungen` stehen die harten Freigabegrenzen: gleiche
+Grundschule höchstens 10 Kinder je Klasse, gleiche Grundschule plus alte Klasse
+höchstens 6 Kinder je Klasse, R-/Unterstützungsmarkierungen höchstens 4 je
+Klasse. Wird eine Grenze überschritten, zeigt die App den Befund im Ergebnis und
+im Export.
 
-Normalerweise gilt:
+**Achtung:** Jede Änderung in diesem Reiter verwirft ein bereits berechnetes
+Ergebnis. Die App weist darauf hin und du musst in Schritt 3 neu berechnen.
 
-- Die App zeigt nur eine beste Loesung.
-- Weitere Vergleichsvarianten sind kein normaler Schulablauf.
-- Diese Loesung wird als Grundlage fuer Pruefung und Export verwendet.
+Der Schalter `Expertenmodus` öffnet `Technische Details` automatisch und schreibt
+zusätzliche Diagnoseblätter in den Excel-Export.
 
-Die Loesung wird nicht automatisch freigegeben, wenn eine paedagogische Pruefung noetig ist.
+## 3. Berechnen
 
-## 4. Loesung oeffnen
+Starte die Berechnung mit `Klassen vorschlagen`. Ein Fortschrittsbalken zeigt,
+welcher Prüfschritt gerade läuft. Die eingestellte Rechenzeit gilt pro
+Prüfschritt, ein vollständiger Lauf über rund 210 Kinder dauert deshalb einige
+Minuten.
 
-Oeffne die vorgeschlagene Loesung. In der Pruefung stehen die wichtigen Listen:
+Danach zeigt die App, wie viele Kinder mindestens einen Wunschfreund haben und ob
+harte Regelverletzungen vorliegen. Die App zeigt genau eine beste Lösung; ein
+Vergleich mehrerer Varianten gehört nicht zum Schulablauf.
 
-- Kinder ohne Wunschfreund
-- getrennte gegenseitige Freundschaften
-- Schueler mit manueller Notiz
-- F/L-Mischklassen
-- Musik-Mischklassen
-- Klassenbelastung
+## 4. Ergebnis
 
-Notizen sind sichtbar markiert. Eine Notiz wird nicht automatisch interpretiert.
+Der Ergebnisreiter enthält drei Bereiche.
 
-## 5. Notizen pruefen
+### Prüfung
 
-Im Notizbereich entscheidest du bewusst, was mit einer Notiz passiert:
+Die Kennzahlen, auf die es fachlich ankommt: harte Regelverletzungen, Kinder ohne
+Wunschfreund, erfüllte Freundeswünsche, F/L- und Musik-Mischklassen. Aufklappbar
+stehen darunter die Zahlen je Klasse und die nicht erfüllten Freundeswünsche.
 
-- als Trennregel anlegen
-- als Zusammenregel anlegen
-- als Klassenfixierung anlegen
-- nur als Hinweis behalten
+### Alle Klassen
 
-Bei Trenn- und Zusammenregeln muss der zweite Schueler bewusst ausgewaehlt werden. Die App kann eindeutige Treffer vorbefuellen, die Entscheidung bleibt aber sichtbar.
+Die Klassen als Spalten, die Kinder als verschiebbare Zeilen. Ein Klick auf ein
+Kind öffnet eine Detailkarte; per Drag-and-drop oder über die Karte lässt sich
+ein Kind in eine andere Klasse verschieben. Notizen und Profilkonflikte sind
+markiert.
 
-## 6. Aktive Regeln kontrollieren
+`Liste prüfen` zeigt, ob die manuell bearbeitete Liste harte Regeln verletzt.
+`Zur berechneten Lösung zurücksetzen` verwirft die manuellen Verschiebungen.
+Manuelle Änderungen gelten für den Excel-Download.
 
-Pruefe den Bereich fuer aktive manuelle Regeln. Jede Regel zeigt:
+### Aktive manuelle Regeln
 
-- Typ
-- Schueler
-- Partner oder Zielklasse
-- Quelle
-- aktiv oder deaktiviert
+Jede Regel zeigt Typ, Schüler, Partner oder Zielklasse, Quelle und ob sie aktiv
+ist. Regeln lassen sich bearbeiten, deaktivieren oder löschen. Deaktivierte
+Regeln wirken nicht auf die nächste Berechnung. Widersprüchliche oder zu enge
+Regeln meldet die App als blockierenden Fehler.
 
-Regeln koennen deaktiviert oder geloescht werden. Deaktivierte Regeln wirken nicht auf die naechste Berechnung.
+Eine manuelle Regel ist eine harte Bedingung. Wird eine Regel geändert, verwirft
+die App das bisherige Ergebnis und bittet dich, in Schritt 3 neu zu berechnen.
 
-## 7. Nach Regeländerungen neu berechnen
+Bemerkungen aus der Excel-Datei werden weiterhin eingelesen, im Klassenboard
+markiert und in den Export geschrieben. Sie werden aber nicht automatisch in
+Regeln umgewandelt: Die App interpretiert keinen Freitext.
 
-Starte die Berechnung erneut, wenn die aktiven manuellen Regeln fachlich passen. Die App gibt aktive Regeln als harte Bedingungen an den Solver weiter.
+## Export
 
-Wenn die Regeln widerspruechlich oder zu eng sind, zeigt die App blockierende Fehler. Dann muessen Regeln geloescht, deaktiviert oder angepasst werden.
-
-## 8. Ergebnis erneut pruefen
-
-Pruefe die neue Loesung wieder in der Loesungspruefung:
-
-- Kinder ohne Wunschfreund
-- getrennte gegenseitige Freundschaften
-- manuelle Notizen
-- F/L- und Musik-Mischklassen
-- Klassenbelastung
-
-Entscheide anhand dieser Listen, ob die neue Loesung besser pruefbar ist als das vorherige Ergebnis.
-
-## 9. Export erzeugen
-
-Die App nimmt automatisch die beste dokumentierte Loesung als Exportgrundlage.
-In der Ergebnisansicht kann die Klassenliste bei Bedarf noch manuell bearbeitet
-werden. Der Button `Liste pruefen` zeigt, ob die bearbeitete Liste harte Regeln
-verletzt.
-
-Der Excel-Export enthaelt das Blatt `Basis`, das Sammelblatt `Alle Klassen` und
-je ein Klassenblatt fuer 5a, 5b, 5c und so weiter.
-
-Offene Notizen, Datenprobleme und Warnungen bleiben in der App sichtbar. Sie
-werden nicht mehr als eigene Excel-Blaetter exportiert.
+`Excel exportieren` schreibt das Blatt `Basis` mit aktualisierter Zielklasse, das
+Sammelblatt `Alle Klassen` und je ein Klassenblatt für 5a, 5b, 5c und so weiter.
+Grundlage ist die aktuell angezeigte Liste, inklusive manueller Verschiebungen.
 
 Die App vergleicht lokal gespeicherte Bestkandidaten mit neu berechneten
-Kandidaten. Dadurch geht eine frueher bessere Einteilung nicht verloren,
-solange Eingabedaten, Profile, Einstellungen und aktive Regeln gleich bleiben.
+Kandidaten. Dadurch geht eine früher bessere Einteilung nicht verloren, solange
+Eingabedaten, Einstellungen und aktive Regeln gleich bleiben.
 
-Der Export enthaelt sensible Schuelerdaten. Teile ihn nur mit berechtigten Personen.
+Offene Bemerkungen, Datenprobleme und Warnungen bleiben in der App sichtbar. Ein
+Download allein bedeutet keine endgültige Freigabe.
+
+## Datenschutz
+
+Die Datei enthält personenbezogene Daten von Kindern, darunter Namen,
+Bemerkungen und R-/Unterstützungsmarkierungen. Die App läuft ausschließlich lokal
+auf deinem Rechner und sendet nichts ins Internet. Der Export enthält dieselben
+sensiblen Daten: Teile ihn nur mit berechtigten Personen und lösche Kopien, die
+nicht mehr gebraucht werden.
 
 ## Was nicht automatisch passiert
 
-- Unklare Notizen werden nicht geraten oder automatisch angewendet.
-- Technische Solverdetails sind fuer den Standardablauf nicht noetig.
+- Bemerkungen werden nicht interpretiert und nicht automatisch in Regeln
+  umgewandelt. Wer eine Bemerkung umsetzen will, legt die Regel bewusst selbst an.
+- Eine Lösung wird nicht automatisch pädagogisch freigegeben.
+- Technische Solverdetails sind für den Standardablauf nicht nötig.

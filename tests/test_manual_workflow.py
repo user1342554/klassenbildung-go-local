@@ -5,7 +5,7 @@ import io
 from openpyxl import load_workbook
 
 import klassenbildung.optimization.solver as solver_module
-from klassenbildung.core.models import ClassConfig, ManualRule, OptimizationSettings, Student
+from klassenbildung.core.models import ClassConfig, OptimizationSettings, Student
 from klassenbildung.excel_io.excel_export import export_excel
 from klassenbildung.optimization.solver import solve_assignments
 from klassenbildung.presentation.candidate_review import build_candidate_review_model

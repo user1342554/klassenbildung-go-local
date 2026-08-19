@@ -20,7 +20,7 @@ from klassenbildung.presentation.candidate_review import (
     review_warning_messages,
 )
 from klassenbildung.services.manual_rules import NoteReviewStatus
-from klassenbildung.presentation.standard_result_view import STANDARD_MODE_FORBIDDEN_SOLVER_JARGON
+from klassenbildung.presentation.wording import STANDARD_MODE_FORBIDDEN_SOLVER_JARGON
 from klassenbildung.services.candidate_selection import review_candidates
 
 

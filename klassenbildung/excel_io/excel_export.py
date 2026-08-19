@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import datetime
-from dataclasses import replace
 import io as py_io
 import re
 
@@ -30,7 +29,6 @@ from klassenbildung.core.models import (
     ValidationMessage,
 )
 from klassenbildung.core.normalization import normalize_class_id
-from klassenbildung.core.settings import load_settings
 from klassenbildung.optimization.scoring import score_solution
 from klassenbildung.presentation.assignment_overview import (
     assignment_overview_headers,
@@ -175,7 +173,6 @@ def _write_overview_sheet(
         settings=settings,
         accepted_warning_ids=accepted_warning_ids,
     )
-    other_hard_violations = finality.other_hard_violations
     data_blockers = len(finality.data_blockers)
     final_blockers = finality.blocker_labels()
     final_status = (

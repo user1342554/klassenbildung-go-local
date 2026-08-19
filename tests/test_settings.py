@@ -112,3 +112,23 @@ def test_loaded_default_class_configs_use_tight_hard_range() -> None:
     assert {config.size_max for config in configs} == {32}
     assert {config.size_policy.comfort_min for config in configs if config.size_policy} == {29}
     assert {config.size_policy.comfort_max for config in configs if config.size_policy} == {31}
+
+
+def test_low_mix_weights_survive_a_settings_round_trip() -> None:
+    """app.py used to 'migrate' any mix weight <= 1500 back to the defaults.
+
+    Because the settings tab pins weight_music_profile and weight_language_profile to 0,
+    that migration matched every hand-picked low value and silently snapped the F/L and
+    Musik sliders back to 10000 / 8000.
+    """
+    chosen = {
+        "weight_music_profile": 0,
+        "weight_language_profile": 0,
+        "weight_mixed_language_class": 1000,
+        "weight_mixed_music_class": 1000,
+    }
+
+    settings = coerce_settings(settings_from_mapping(chosen))
+
+    assert settings.weight_mixed_language_class == 1000
+    assert settings.weight_mixed_music_class == 1000

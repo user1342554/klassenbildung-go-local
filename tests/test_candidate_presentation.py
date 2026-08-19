@@ -2,17 +2,7 @@ from __future__ import annotations
 
 from klassenbildung.core.models import ClassConfig, OptimizationSettings, ProfileSlackReport, SolverResult, Student
 from klassenbildung.optimization.solver import solve_assignments
-from klassenbildung.presentation.candidate_summary import (
-    CANDIDATE_SUMMARY_FIELDS,
-    candidate_summary_records,
-)
-from klassenbildung.presentation.expert_result_view import expert_solver_diagnostic_text
 from klassenbildung.presentation.optimization_progress import calculation_result_summary
-from klassenbildung.presentation.standard_result_view import (
-    STANDARD_MODE_FORBIDDEN_SOLVER_JARGON,
-    all_candidate_summary_records_for_standard_view,
-    standard_visible_text,
-)
 from klassenbildung.presentation.wording import candidate_tradeoff_text
 from klassenbildung.services.candidate_selection import decision_candidate_cards, review_candidates
 
@@ -75,66 +65,6 @@ def test_e_wording_does_not_claim_socially_better_than_c_when_c_has_less_isolati
 
     assert "Sozial liegt E knapp hinter C" in text
     assert "besser sozial" not in text
-
-
-def test_candidate_summary_is_single_source_for_ui_json() -> None:
-    solver_result = SolverResult(
-        "FEASIBLE",
-        {},
-        profile_slack_reports=[
-            _report(
-                "A streng",
-                isolated=58,
-                fl_actual=1,
-                music_actual=1,
-                fl_allowed=1,
-                music_allowed=1,
-                fl_minority=12,
-                music_minority=9,
-                role=None,
-            ),
-            _report(
-                "C Musik +2",
-                isolated=26,
-                fl_actual=1,
-                music_actual=3,
-                fl_allowed=1,
-                music_allowed=3,
-                fl_minority=18,
-                music_minority=43,
-                role="F/L-schonende Alternative",
-            ),
-            _report(
-                "E beide +1",
-                isolated=28,
-                fl_actual=2,
-                music_actual=2,
-                fl_allowed=2,
-                music_allowed=2,
-                fl_minority=22,
-                music_minority=24,
-                role="Ausgewogenster Vorschlag",
-            ),
-            _report(
-                "F mehr Profil-Slack",
-                isolated=21,
-                fl_actual=2,
-                music_actual=3,
-                fl_allowed=2,
-                music_allowed=3,
-                fl_minority=25,
-                music_minority=45,
-                role="Sozial stärkste Alternative",
-            ),
-        ],
-    )
-
-    json_records = _records_by_key(candidate_summary_records(solver_result, 210))
-    ui_records = _records_by_key(all_candidate_summary_records_for_standard_view(solver_result, 210))
-
-    for key in ("A", "C", "E", "F"):
-        for field in CANDIDATE_SUMMARY_FIELDS:
-            assert ui_records[key][field] == json_records[key][field]
 
 
 def test_debug_payload_uses_explicit_candidate_roles() -> None:
@@ -244,30 +174,6 @@ def _nested_keys(value: object) -> set[str]:
     return set()
 
 
-def test_standard_mode_hides_solver_jargon() -> None:
-    solver_result = SolverResult(
-        "FEASIBLE",
-        {},
-        profile_slack_reports=[
-            _report("A streng", isolated=58, fl_actual=1, music_actual=1, fl_allowed=1, music_allowed=1),
-            _report("E beide +1", isolated=28, fl_actual=2, music_actual=2, fl_allowed=2, music_allowed=2),
-            _report("F mehr Profil-Slack", isolated=21, fl_actual=2, music_actual=3, fl_allowed=2, music_allowed=3),
-        ],
-    )
-
-    text = standard_visible_text(solver_result, 210)
-
-    for term in STANDARD_MODE_FORBIDDEN_SOLVER_JARGON:
-        assert term not in text
-
-
-def test_expert_mode_shows_solver_diagnostics() -> None:
-    text = expert_solver_diagnostic_text()
-
-    for term in ("FEASIBLE", "UNKNOWN", "OPTIMAL", "Gap", "Objective", "Best Bound"):
-        assert term in text
-
-
 def _report(
     variant: str,
     *,
@@ -326,7 +232,3 @@ def _student(index: int, language: str, music: str = "Reg", *, friend1: str | No
         note_text=None,
         is_support=False,
     )
-
-
-def _records_by_key(records: list[dict[str, object]]) -> dict[str, dict[str, object]]:
-    return {str(record["key"]): record for record in records}

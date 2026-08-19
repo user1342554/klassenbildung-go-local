@@ -8,7 +8,7 @@ from klassenbildung.presentation.optimization_progress import (
     plain_status_label,
     progress_event_message,
 )
-from klassenbildung.presentation.standard_result_view import STANDARD_MODE_FORBIDDEN_SOLVER_JARGON
+from klassenbildung.presentation.wording import STANDARD_MODE_FORBIDDEN_SOLVER_JARGON
 
 
 def test_progress_texts_stay_plain_language_for_standard_users() -> None:

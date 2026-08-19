@@ -3,6 +3,22 @@ from __future__ import annotations
 from klassenbildung.presentation.result_view_model import CandidateSummary
 
 
+# Solver vocabulary that must never reach a teacher-facing screen. Tests hold the
+# progress messages and the candidate review text against this list.
+STANDARD_MODE_FORBIDDEN_SOLVER_JARGON = {
+    "FEASIBLE",
+    "UNKNOWN",
+    "OPTIMAL",
+    "Gap",
+    "Objective",
+    "Best Bound",
+    "Incumbent",
+    "Slack",
+    "carried_candidate",
+    "refinement",
+}
+
+
 def candidate_warning_lines(summary: CandidateSummary) -> list[str]:
     warnings = []
     if summary.music_minority >= 30:
