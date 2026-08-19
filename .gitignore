@@ -13,3 +13,7 @@ config/settings.json
 config/class_profiles.json
 config/profile_incumbents.json
 streamlit.log
+
+# macOS-Build
+build_macos/build/
+build_macos/dist/
