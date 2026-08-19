@@ -29,6 +29,11 @@ for package in ("streamlit", "ortools", "pandas", "openpyxl", "altair", "pyarrow
 
 hiddenimports += collect_submodules("klassenbildung")
 
+# Signieren nur, wenn eine Identitaet gesetzt ist (Developer ID Application: ...).
+# Ohne Identitaet baut PyInstaller wie bisher ad-hoc-signiert.
+CODESIGN_IDENTITY = os.environ.get("KB_CODESIGN_IDENTITY") or None
+ENTITLEMENTS = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "entitlements.plist")
+
 a = Analysis(
     ["launcher.py"],
     pathex=[".."],
@@ -52,6 +57,8 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
+    codesign_identity=CODESIGN_IDENTITY,
+    entitlements_file=ENTITLEMENTS if CODESIGN_IDENTITY else None,
 )
 
 coll = COLLECT(

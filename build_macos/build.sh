@@ -15,8 +15,13 @@ fi
 # Selbsttest im gebuendelten Zustand: importiert alle Module, prueft Datendateien.
 KLASSENBILDUNG_SELFTEST=1 dist/Klassenbildung.app/Contents/MacOS/Klassenbildung
 
-# ditto statt zip: erhaelt Symlinks und Rechte im App-Paket.
-rm -f dist/Klassenbildung-macOS.zip
-ditto -c -k --sequesterRsrc --keepParent dist/Klassenbildung.app dist/Klassenbildung-macOS.zip
-
-echo "Fertig: dist/Klassenbildung.app und dist/Klassenbildung-macOS.zip"
+if [ -n "${KB_CODESIGN_IDENTITY:-}" ]; then
+  # Signieren (und bei gesetztem KB_NOTARY_PROFILE auch notarisieren).
+  ./sign_and_notarize.sh
+else
+  # ditto statt zip: erhaelt Symlinks und Rechte im App-Paket.
+  rm -f dist/Klassenbildung-macOS.zip
+  ditto -c -k --sequesterRsrc --keepParent dist/Klassenbildung.app dist/Klassenbildung-macOS.zip
+  echo "Fertig (unsigniert): dist/Klassenbildung.app und dist/Klassenbildung-macOS.zip"
+  echo "Zum Signieren: KB_CODESIGN_IDENTITY=... KB_NOTARY_PROFILE=... ./build.sh"
+fi

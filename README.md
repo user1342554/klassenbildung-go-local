@@ -58,6 +58,47 @@ Einstellungen und Klassenprofile werden unter
 
 Ergebnis: `build_macos/dist/Klassenbildung.app` und `build_macos/dist/Klassenbildung-macOS.zip`.
 
+### Signieren und notarisieren (optional)
+
+Damit die Gatekeeper-Meldung dauerhaft verschwindet, muss die App mit einer Apple-Developer-ID
+signiert und von Apple notarisiert werden. Voraussetzung ist das
+[Apple Developer Program](https://developer.apple.com/programs/) (99 USD/Jahr).
+
+**Einmalig einrichten:**
+
+1. Zertifikat vom Typ **„Developer ID Application"** erstellen und in den Schluesselbund laden.
+   Nur dieser Typ funktioniert ausserhalb des App Store — „Apple Development" oder
+   „Apple Distribution" werden von Gatekeeper abgelehnt. Vorhandene Identitaeten anzeigen:
+
+   ```bash
+   security find-identity -v -p codesigning
+   ```
+
+2. App-spezifisches Passwort auf https://account.apple.com erzeugen und den Notar-Zugang
+   im Schluesselbund hinterlegen:
+
+   ```bash
+   xcrun notarytool store-credentials "klassenbildung" \
+       --apple-id "DEINE@APPLE.ID" --team-id "DEINETEAMID" \
+       --password "app-spezifisches-passwort"
+   ```
+
+**Bauen, signieren, notarisieren:**
+
+```bash
+KB_CODESIGN_IDENTITY="Developer ID Application: Dein Name (TEAMID)" \
+KB_NOTARY_PROFILE="klassenbildung" \
+./build_macos/build.sh
+```
+
+Das Skript signiert alle eingebetteten Bibliotheken einzeln, aktiviert die Hardened Runtime,
+laedt die App bei Apple hoch, wartet auf das Ergebnis, heftet das Ticket an die App
+(`stapler`) und packt sie neu. Die Notarisierung dauert meist wenige Minuten.
+
+Die noetigen Ausnahmen fuer CPython (`allow-unsigned-executable-memory`, `allow-jit`,
+`disable-library-validation`) stehen in `build_macos/entitlements.plist` — ohne sie startet
+die App unter Hardened Runtime nicht.
+
 ## Start unter Windows
 
 `start_klassenbildung.bat` doppelklicken.
