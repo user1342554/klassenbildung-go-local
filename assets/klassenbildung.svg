@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Klassenbildung">
+  <defs>
+    <linearGradient id="background" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38a4ff"/>
+      <stop offset="1" stop-color="#0066d6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#background)"/>
+  <circle cx="256" cy="170" r="68" fill="#fff"/>
+  <circle cx="135" cy="218" r="48" fill="#fff" opacity=".88"/>
+  <circle cx="377" cy="218" r="48" fill="#fff" opacity=".88"/>
+  <path d="M139 401c0-83 52-141 117-141s117 58 117 141v19H139z" fill="#fff"/>
+  <path d="M48 397c0-64 38-111 87-111 22 0 43 10 58 27-28 31-45 75-45 125H48z" fill="#fff" opacity=".88"/>
+  <path d="M464 397c0-64-38-111-87-111-22 0-43 10-58 27 28 31 45 75 45 125h100z" fill="#fff" opacity=".88"/>
+</svg>

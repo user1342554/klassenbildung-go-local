@@ -17,3 +17,6 @@ streamlit.log
 # macOS-Build
 build_macos/build/
 build_macos/dist/
+
+# Linux-Installer-Build
+build_linux/dist/

@@ -2,7 +2,41 @@
 
 Streamlit-App zur Klassenbildung. Laeuft lokal unter Windows, macOS und Linux.
 
-## Start unter macOS / Linux
+## Linux: Doppelklick-Installation
+
+Das fertige Paket `Klassenbildung-Linux-Installer.tar.gz` entpacken und danach
+`Klassenbildung-Linux-Installer.desktop` doppelklicken. Je nach Dateimanager muss beim
+ersten Mal **Ausfuehren** oder **Start erlauben** gewaehlt werden. Alternativ kann direkt
+`Install-Klassenbildung-Linux.sh` doppelgeklickt werden.
+
+Der Installer erledigt automatisch:
+
+- eigene Python-3.12-Laufzeit und virtuelle Umgebung im Benutzerkonto,
+- alle Python-Abhaengigkeiten inklusive Streamlit und OR-Tools,
+- Starter im App-Menue und, falls unterstuetzt, auf dem Desktop,
+- getrennte, bei Updates erhaltene Benutzereinstellungen.
+
+Es wird kein bereits installiertes System-Python veraendert. Normalerweise ist auch kein
+Administrator-Passwort noetig. Nur wenn auf dem Rechner weder `curl`, `wget` noch irgendein
+Python vorhanden ist, installiert das Skript `curl` ueber apt, dnf/yum, zypper oder pacman.
+Beim ersten Installieren ist eine Internetverbindung erforderlich. Unterstuetzt werden
+aktuelle 64-Bit-Linux-Systeme auf x86_64 und ARM64; Spezialdistributionen ohne glibc (z. B.
+Alpine) sind wegen OR-Tools nicht abgedeckt.
+
+Nach der Installation startet **Klassenbildung** direkt und ist spaeter im App-Menue zu
+finden. Deinstallation im Terminal: `~/.local/bin/klassenbildung-uninstall`. Mit
+`~/.local/bin/klassenbildung-uninstall --remove-data` werden auch persoenliche Einstellungen
+entfernt.
+
+### Linux-Installationspaket bauen
+
+```bash
+./build_linux/build_installer.sh
+```
+
+Ergebnis: `build_linux/dist/Klassenbildung-Linux-Installer.tar.gz` plus SHA-256-Datei.
+
+## Manueller Start unter macOS / Linux
 
 ```bash
 ./start_klassenbildung.sh
@@ -13,7 +47,7 @@ Unter macOS kann alternativ `start_klassenbildung.command` im Finder doppelgekli
 Das Skript legt beim ersten Start eine virtuelle Umgebung (`.venv`) an, installiert die
 Abhaengigkeiten und oeffnet http://localhost:6767 im Browser.
 
-**Voraussetzung:** Python 3.11 oder neuer. Das mit macOS ausgelieferte Python 3.9 reicht
+**Voraussetzung fuer diesen manuellen Weg:** Python 3.11 oder neuer. Das mit macOS ausgelieferte Python 3.9 reicht
 nicht aus. Installation z. B. per Homebrew:
 
 ```bash

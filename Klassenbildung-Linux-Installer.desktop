@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Klassenbildung installieren
+Comment=Klassenbildung mit allen Abhaengigkeiten fuer diesen Benutzer installieren
+Icon=system-software-install
+Exec=sh -c "installer_dir=\\$(dirname \"\\$1\"); exec bash \"\\$installer_dir/Install-Klassenbildung-Linux.sh\"" installer %k
+Terminal=true
+Categories=Education;
+StartupNotify=true
