@@ -36,6 +36,11 @@ def _prepare_workdir(bundle: Path) -> Path:
         if source.exists():
             shutil.copyfile(source, target)  # Vorgaben immer aktualisieren
 
+    sample_source = bundle / "DummyDaten.xlsx"
+    sample_target = APP_SUPPORT / "DummyDaten.xlsx"
+    if sample_source.exists() and not sample_target.exists():
+        shutil.copyfile(sample_source, sample_target)
+
     streamlit_config = bundle / ".streamlit" / "config.toml"
     if streamlit_config.exists():
         shutil.copyfile(streamlit_config, APP_SUPPORT / ".streamlit" / "config.toml")
@@ -68,7 +73,7 @@ def _selftest(bundle: Path) -> int:
         except Exception as error:  # pragma: no cover - Diagnose im Bundle
             failures.append(f"{module.name}: {error}")
 
-    for relative in ("app.py", "config/settings.default.json",
+    for relative in ("app.py", "DummyDaten.xlsx", "config/settings.default.json",
                      "config/class_profiles.default.json", ".streamlit/config.toml",
                      "klassenbildung/components/assignment_board/index.html"):
         if not (bundle / relative).exists():

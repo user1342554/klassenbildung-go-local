@@ -164,6 +164,7 @@ PY
 valid_source_tree() {
   local directory="$1"
   [[ -f "$directory/app.py" \
+    && -f "$directory/DummyDaten.xlsx" \
     && -f "$directory/requirements.txt" \
     && -d "$directory/klassenbildung" \
     && -f "$directory/config/settings.default.json" \
@@ -206,6 +207,7 @@ copy_application() {
   local target="$1"
   mkdir -p "$target/config" "$target/.streamlit"
   install -m 0644 "$SOURCE_DIR/app.py" "$target/app.py"
+  install -m 0644 "$SOURCE_DIR/DummyDaten.xlsx" "$target/DummyDaten.xlsx"
   install -m 0644 "$SOURCE_DIR/requirements.txt" "$target/requirements.txt"
   [[ ! -f "$SOURCE_DIR/pyproject.toml" ]] || install -m 0644 "$SOURCE_DIR/pyproject.toml" "$target/pyproject.toml"
   cp -R "$SOURCE_DIR/klassenbildung" "$target/klassenbildung"

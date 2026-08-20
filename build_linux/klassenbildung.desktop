@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Klassenbildung
+Comment=Schuelerinnen und Schueler lokal auf Klassen verteilen
+Comment[de]=Schuelerinnen und Schueler lokal auf Klassen verteilen
+Exec=/usr/bin/klassenbildung
+TryExec=/usr/bin/klassenbildung
+Icon=klassenbildung
+Terminal=false
+Categories=Education;
+Keywords=Schule;Klassen;Schueler;Verteilung;
+StartupNotify=true

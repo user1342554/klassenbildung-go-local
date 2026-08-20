@@ -19,6 +19,7 @@ mkdir -p "$PACKAGE_DIR/config" "$PACKAGE_DIR/.streamlit" "$PACKAGE_DIR/build_lin
 install -m 0755 "$PROJECT_DIR/Install-Klassenbildung-Linux.sh" "$PACKAGE_DIR/Install-Klassenbildung-Linux.sh"
 install -m 0755 "$PROJECT_DIR/Klassenbildung-Linux-Installer.desktop" "$PACKAGE_DIR/Klassenbildung-Linux-Installer.desktop"
 install -m 0644 "$PROJECT_DIR/app.py" "$PACKAGE_DIR/app.py"
+install -m 0644 "$PROJECT_DIR/DummyDaten.xlsx" "$PACKAGE_DIR/DummyDaten.xlsx"
 install -m 0644 "$PROJECT_DIR/requirements.txt" "$PACKAGE_DIR/requirements.txt"
 install -m 0644 "$PROJECT_DIR/pyproject.toml" "$PACKAGE_DIR/pyproject.toml"
 install -m 0644 "$PROJECT_DIR/config/settings.default.json" "$PACKAGE_DIR/config/settings.default.json"

@@ -15,6 +15,8 @@ def test_linux_entrypoints_are_executable() -> None:
         "build_linux/launcher.sh",
         "build_linux/uninstall.sh",
         "build_linux/build_installer.sh",
+        "build_linux/build_native_packages.sh",
+        "build_linux/native_wrapper.sh",
     ):
         mode = (PROJECT_ROOT / relative).stat().st_mode
         assert mode & stat.S_IXUSR, f"{relative} must be executable"
@@ -74,6 +76,38 @@ def test_linux_icon_is_valid_svg_shape() -> None:
     assert icon.startswith('<?xml version="1.0"')
     assert '<svg xmlns="http://www.w3.org/2000/svg"' in icon
     assert 'viewBox="0 0 512 512"' in icon
+
+
+def test_native_packages_are_desktop_installable_and_self_contained() -> None:
+    build_script = (PROJECT_ROOT / "build_linux/build_native_packages.sh").read_text(
+        encoding="utf-8"
+    )
+    desktop = (PROJECT_ROOT / "build_linux/klassenbildung.desktop").read_text(encoding="utf-8")
+    spec = (PROJECT_ROOT / "build_linux/Klassenbildung.spec").read_text(encoding="utf-8")
+
+    assert "manylinux_2_28" in build_script
+    assert "rpmbuild" in build_script
+    assert "dpkg-deb" in build_script
+    assert "KLASSENBILDUNG_SELFTEST=1" in build_script
+    assert "Terminal=false" in desktop
+    assert "Exec=/usr/bin/klassenbildung" in desktop
+    assert "DummyDaten.xlsx" in spec
+    assert 'name="Klassenbildung"' in spec
+    launcher = (PROJECT_ROOT / "build_linux/native_launcher.py").read_text(encoding="utf-8")
+    assert 'KLASSENBILDUNG_NO_BROWSER") != "1"' in launcher
+
+
+def test_dummy_workbook_is_tracked_by_the_distribution() -> None:
+    workbook = PROJECT_ROOT / "DummyDaten.xlsx"
+    assert workbook.is_file()
+    assert workbook.stat().st_size > 10_000
+
+    installer = (PROJECT_ROOT / "Install-Klassenbildung-Linux.sh").read_text(encoding="utf-8")
+    archive_builder = (PROJECT_ROOT / "build_linux/build_installer.sh").read_text(
+        encoding="utf-8"
+    )
+    assert 'SOURCE_DIR/DummyDaten.xlsx' in installer
+    assert 'PROJECT_DIR/DummyDaten.xlsx' in archive_builder
 
 
 def test_no_installer_path_depends_on_the_developers_home() -> None:

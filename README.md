@@ -2,39 +2,41 @@
 
 Streamlit-App zur Klassenbildung. Laeuft lokal unter Windows, macOS und Linux.
 
-## Linux: Doppelklick-Installation
+## Linux: per Doppelklick installieren
 
-Das fertige Paket `Klassenbildung-Linux-Installer.tar.gz` entpacken und danach
-`Klassenbildung-Linux-Installer.desktop` doppelklicken. Je nach Dateimanager muss beim
-ersten Mal **Ausfuehren** oder **Start erlauben** gewaehlt werden. Alternativ kann direkt
-`Install-Klassenbildung-Linux.sh` doppelgeklickt werden.
+Fuer Fedora, Nobara und openSUSE die Datei `Klassenbildung-1.0.0-1.x86_64.rpm`
+herunterladen und doppelklicken. Fuer Ubuntu, Debian und Linux Mint die Datei
+`Klassenbildung_1.0.0-1_amd64.deb` nehmen. Der jeweilige Software-Installer zeigt danach
+den normalen **Installieren**-Knopf.
 
-Der Installer erledigt automatisch:
+Beide Pakete enthalten Python 3.12, Streamlit, OR-Tools und alle weiteren Module. Nach der
+Installation steht **Klassenbildung** im App-Menue. Beim ersten Start wird keine
+Internetverbindung gebraucht. Einstellungen und Klassenprofile bleiben im Benutzerkonto.
 
-- eigene Python-3.12-Laufzeit und virtuelle Umgebung im Benutzerkonto,
-- alle Python-Abhaengigkeiten inklusive Streamlit und OR-Tools,
-- Starter im App-Menue und, falls unterstuetzt, auf dem Desktop,
-- getrennte, bei Updates erhaltene Benutzereinstellungen.
+Die Pakete sind fuer 64-Bit-x86-Linux mit glibc 2.28 oder neuer gebaut. Die RPM-Datei wird
+auf Nobara getestet. Fuer andere Architekturen bleibt das Quellpaket
+`Klassenbildung-Linux-Installer.tar.gz` als technischer Ausweichweg. Dieses Archiv muss vor
+dem Start vollstaendig entpackt werden; ein Archivmanager kann daraus keine Programme
+ausfuehren.
 
-Es wird kein bereits installiertes System-Python veraendert. Normalerweise ist auch kein
-Administrator-Passwort noetig. Nur wenn auf dem Rechner weder `curl`, `wget` noch irgendein
-Python vorhanden ist, installiert das Skript `curl` ueber apt, dnf/yum, zypper oder pacman.
-Beim ersten Installieren ist eine Internetverbindung erforderlich. Unterstuetzt werden
-aktuelle 64-Bit-Linux-Systeme auf x86_64 und ARM64; Spezialdistributionen ohne glibc (z. B.
-Alpine) sind wegen OR-Tools nicht abgedeckt.
+### Native Linux-Pakete bauen
 
-Nach der Installation startet **Klassenbildung** direkt und ist spaeter im App-Menue zu
-finden. Deinstallation im Terminal: `~/.local/bin/klassenbildung-uninstall`. Mit
-`~/.local/bin/klassenbildung-uninstall --remove-data` werden auch persoenliche Einstellungen
-entfernt.
+```bash
+./build_linux/build_native_packages.sh
+```
 
-### Linux-Installationspaket bauen
+Der Standard-Build nutzt einen `manylinux_2_28`-Container und erzeugt RPM, DEB und
+`SHA256SUMS` unter `build_linux/packages/`. Mit `KB_NATIVE_LOCAL=1` kann lokal gebaut werden,
+das Ergebnis benoetigt dann unter Umstaenden eine neuere glibc-Version.
+
+### Technisches Benutzerkonto-Installationspaket bauen
 
 ```bash
 ./build_linux/build_installer.sh
 ```
 
-Ergebnis: `build_linux/dist/Klassenbildung-Linux-Installer.tar.gz` plus SHA-256-Datei.
+Ergebnis: `build_linux/dist/Klassenbildung-Linux-Installer.tar.gz` plus SHA-256-Datei. Dieser
+Weg installiert eine eigene Python-Laufzeit beim ersten Durchlauf und benoetigt Internet.
 
 ## Manueller Start unter macOS / Linux
 

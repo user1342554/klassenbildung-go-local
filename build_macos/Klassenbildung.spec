@@ -12,6 +12,7 @@ sys.path.insert(0, REPO_ROOT)
 
 datas = [
     ("../app.py", "."),
+    ("../DummyDaten.xlsx", "."),
     ("../config/settings.default.json", "config"),
     ("../config/class_profiles.default.json", "config"),
     ("../.streamlit/config.toml", ".streamlit"),

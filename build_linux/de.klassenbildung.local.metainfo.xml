@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>de.klassenbildung.local</id>
+  <name>Klassenbildung</name>
+  <summary>Schuelerinnen und Schueler lokal auf Klassen verteilen</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <description>
+    <p>
+      Klassenbildung importiert Excel-Daten, prueft Regeln und erstellt mit OR-Tools
+      Klasseneinteilungen. Die Anwendung laeuft lokal und oeffnet ihre Bedienoberflaeche
+      im Browser.
+    </p>
+  </description>
+  <launchable type="desktop-id">klassenbildung.desktop</launchable>
+  <url type="homepage">https://github.com/user1342554/klassenbildung-go-local</url>
+  <provides>
+    <binary>klassenbildung</binary>
+  </provides>
+  <releases>
+    <release version="1.0.0" date="2026-08-20"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>
